@@ -8,7 +8,7 @@ Usage:
 import os
 import sys
 import argparse
-from ftplib import FTP
+from ftplib import FTP, FTP_TLS
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -64,10 +64,13 @@ def deploy(dry_run: bool = False):
         return
 
     # Connect and upload
-    ftp = FTP()
+    # Hostinger requires explicit FTPS (AUTH TLS on port 21): as of 2026-10-06
+    # plain FTP logs in, then the server resets the connection on the first command.
+    ftp = FTP_TLS()
     ftp.connect(FTP_HOST, 21, timeout=30)
     ftp.login(FTP_USER, FTP_PASS)
-    print(f"Connected as {FTP_USER}")
+    ftp.prot_p()
+    print(f"Connected as {FTP_USER} (FTPS)")
 
     uploaded = 0
     for local, remote in files:
@@ -82,7 +85,10 @@ def deploy(dry_run: bool = False):
         print(f"  [{uploaded}/{len(files)}] {remote} ({size:,} bytes)")
 
     ftp.quit()
-    print(f"\nDone! {uploaded} files deployed to {FTP_HOST}:{REMOTE_BASE}/")
+    print(f"\nDeploy: expected {len(files)}, uploaded {uploaded}")
+    if uploaded != len(files):
+        sys.exit(1)
+    print(f"Done! {uploaded} files deployed to {FTP_HOST}:{REMOTE_BASE}/")
     print(f"Live at: https://climbthesearches.com/hk-jobs/")
 
 
