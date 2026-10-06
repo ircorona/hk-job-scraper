@@ -9,8 +9,21 @@ jobs:
   scrape-and-deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: write   # keep-alive step below re-enables this workflow
 
     steps:
+      # GitHub disables scheduled workflows after 60 days with no repo activity.
+      # That silently froze the dashboard on 2026-05-29 (found 2026-10-06).
+      # Re-enabling via the API on every run resets the inactivity timer
+      # (same approach as the keepalive-workflow action's API mode).
+      - name: Keep-alive (prevent 60-day auto-disable)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/daily-scrape.yml/enable"
+        continue-on-error: true
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -45,11 +58,9 @@ jobs:
           ls -la frontend/public/data/
           echo "Total JSON files: $(ls frontend/public/data/*.json 2>/dev/null | wc -l)"
 
-      - name: Hunter.io enrichment (recruiter emails)
-        env:
-          HUNTER_API_KEY: ${{ secrets.HUNTER_API_KEY }}
-        run: python hunter_enricher.py --max 30
-        continue-on-error: true
+      # Hunter.io enrichment removed 2026-10-06: it spent up to 30 searches a day
+      # on the free tier (50/month), the same budget the job search and the
+      # Auramip pipeline depend on. Run hunter_enricher.py by hand if needed.
 
       - name: Build Astro frontend
         working-directory: ./frontend
@@ -61,12 +72,13 @@ jobs:
           FTP_PASS: ${{ secrets.FTP_PASS }}
           FTP_HOST: ${{ secrets.FTP_HOST }}
         run: |
-          count=0
+          expected=0
+          ok=0
           failed=0
-          find ./frontend/dist/ -type f | while read f; do
+          while read -r f; do
+            expected=$((expected + 1))
             remote_path="/hk-jobs/${f#./frontend/dist/}"
-            remote_dir=$(dirname "$remote_path")
-            curl --ssl-reqd --insecure \
+            if curl --ssl-reqd --insecure \
               --ftp-create-dirs \
               -T "$f" \
               "ftp://$FTP_HOST$remote_path" \
@@ -74,9 +86,15 @@ jobs:
               --connect-timeout 30 \
               --max-time 120 \
               --retry 2 \
-              -s || echo "FAILED: $remote_path"
-          done
-          echo "Done — Astro build deployed"
+              -s; then
+              ok=$((ok + 1))
+            else
+              failed=$((failed + 1))
+              echo "FAILED: $remote_path"
+            fi
+          done < <(find ./frontend/dist/ -type f)
+          echo "Deploy: expected $expected, uploaded $ok, failed $failed"
+          [ "$failed" -eq 0 ] || exit 1
 
       - name: Upload counter.php via FTPS
         env:
