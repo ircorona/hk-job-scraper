@@ -30,6 +30,8 @@
   Header set X-XSS-Protection "1; mode=block"
   Header set Referrer-Policy "strict-origin-when-cross-origin"
   Header set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  # Personal tool: keep the page AND the JSON data out of search indexes
+  Header set X-Robots-Tag "noindex, nofollow"
 </IfModule>
 
 # === Error Pages ===

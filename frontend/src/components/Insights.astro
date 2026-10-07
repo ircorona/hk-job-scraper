@@ -1,52 +1,54 @@
 ---
-// Collapsible insights — salary brackets + salary by seniority + top employers
-// Orange accent charts on black background
+// Charts for the selected category (not the table filters). Rendered by renderCharts() in index.astro.
+const fig = 'bg-surface border border-rule rounded-[10px] p-4 md:p-6';
+const h3 = 'font-serif text-xl md:text-[1.375rem] leading-snug text-ink';
+const cap = 'mt-1 mb-4 text-sm text-ink-2';
+const empty = 'hidden absolute inset-0 flex items-center justify-center text-center text-sm text-ink-3 px-6';
 ---
 
-<div class="glass mb-4">
-  <button id="insightsToggle" class="w-full flex items-center justify-between p-4 text-left">
-    <div>
-      <span class="text-sm font-semibold text-white">Market Insights</span>
-      <span class="text-xs text-neutral-500 ml-2">Salary distribution, seniority pay, top employers</span>
-    </div>
-    <svg id="insightsArrow" class="collapse-arrow w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-    </svg>
-  </button>
-  <div id="insightsContent" class="px-4 pb-4">
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-      <!-- Salary brackets (horizontal bars like Mexico) -->
-      <div id="salarySection">
-        <h4 class="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">Where's the Money? (HKD/month)</h4>
-        <div class="chart-box"><canvas id="salaryChart"></canvas></div>
+<section id="charts" class="mb-10 md:mb-12" aria-label="Charts">
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-4 md:mb-6">
+    <figure class={fig}>
+      <h3 class={h3}>When were they posted?</h3>
+      <figcaption id="postedSub" class={cap}>Jobs per Hong Kong posting day, last 14 days. Today in orange.</figcaption>
+      <div class="relative h-[260px]">
+        <canvas id="postedChart" role="img" aria-label="Jobs posted per day"></canvas>
+        <p id="postedEmpty" class={empty}>No dated ads in the last 14 days.</p>
       </div>
-      <!-- Salary by seniority -->
-      <div id="senioritySection">
-        <h4 class="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">Salary by Seniority</h4>
-        <div class="chart-box"><canvas id="seniorityChart"></canvas></div>
+    </figure>
+    <figure class={fig}>
+      <h3 class={h3}>Do they need Chinese?</h3>
+      <figcaption id="chineseSub" class={cap}>Read from the full ad text. Cantonese or Mandarin both count.</figcaption>
+      <div class="relative h-[260px]">
+        <canvas id="chineseChart" role="img" aria-label="Chinese-language requirement"></canvas>
       </div>
-    </div>
-    <!-- Top employers (full width) -->
-    <div id="employersSection">
-      <h4 class="text-xs font-medium text-neutral-400 uppercase tracking-wider mb-2">Top Employers</h4>
-      <div class="chart-box"><canvas id="employersChart"></canvas></div>
-    </div>
-    <div id="insightsEmpty" class="hidden text-center py-8 text-sm text-neutral-500">
-      Not enough data to show insights for this category.
-    </div>
+    </figure>
   </div>
-</div>
-
-<script is:inline>
-document.addEventListener('DOMContentLoaded', function() {
-  var toggle = document.getElementById('insightsToggle');
-  var content = document.getElementById('insightsContent');
-  var arrow = document.getElementById('insightsArrow');
-  if (toggle && content) {
-    toggle.addEventListener('click', function() {
-      content.classList.toggle('hidden');
-      arrow.classList.toggle('open');
-    });
-  }
-});
-</script>
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-4 md:mb-6">
+    <figure class={fig}>
+      <h3 id="salaryTitle" class={h3}>Where is the money?</h3>
+      <figcaption id="salarySub" class={cap}>Monthly salary brackets, published salaries only.</figcaption>
+      <div class="relative h-[260px]">
+        <canvas id="salaryChart" role="img" aria-label="Jobs by published salary bracket"></canvas>
+        <p id="salaryEmpty" class={empty}>Too few ads in this category publish a salary to chart.</p>
+      </div>
+    </figure>
+    <figure class={fig}>
+      <h3 class={h3}>Which skills do they ask for?</h3>
+      <figcaption id="skillsSub" class={cap}>Jobs that mention each skill.</figcaption>
+      <div class="relative h-[300px]">
+        <canvas id="skillsChart" role="img" aria-label="Most requested skills"></canvas>
+        <p id="skillsEmpty" class={empty}>No skills detected in these ads.</p>
+      </div>
+    </figure>
+  </div>
+  <figure class={fig}>
+    <h3 class={h3}>Who is hiring?</h3>
+    <figcaption id="employersSub" class={cap}>Employers with the most open ads, confidential ones left out.</figcaption>
+    <div class="relative h-[280px]">
+      <canvas id="employersChart" role="img" aria-label="Employers with the most ads"></canvas>
+      <p id="employersEmpty" class={empty}>Not enough named employers to chart.</p>
+    </div>
+  </figure>
+  <p id="chartsUnavailable" class="hidden mt-4 text-sm text-ink-3">Charts could not load (Chart.js did not arrive). The job list below still works.</p>
+</section>

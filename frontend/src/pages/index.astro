@@ -1,11 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import Header from '../components/Header.astro';
-import StatsGrid from '../components/StatsGrid.astro';
-import FilterBar from '../components/FilterBar.astro';
-import SkillTags from '../components/SkillTags.astro';
-import JobTable from '../components/JobTable.astro';
+import ApplyFirst from '../components/ApplyFirst.astro';
+import KeyFigures from '../components/KeyFigures.astro';
 import Insights from '../components/Insights.astro';
+import FilterBar from '../components/FilterBar.astro';
+import JobTable from '../components/JobTable.astro';
 import TaxCalculator from '../components/TaxCalculator.astro';
 import Methodology from '../components/Methodology.astro';
 import Footer from '../components/Footer.astro';
@@ -16,25 +16,42 @@ const base = import.meta.env.BASE_URL;
 <Layout>
   <Header />
 
-  <div id="loading" class="flex items-center justify-center py-20">
-    <div class="text-center">
-      <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500 mx-auto"></div>
-      <p class="text-neutral-500 mt-3 text-sm">Loading jobs...</p>
+  <main>
+    <!-- LOADING: calm skeleton in the shape of the results -->
+    <div id="loading" class="max-w-6xl mx-auto px-4 md:px-6 pb-10" role="status" aria-live="polite">
+      <p id="loadingText" class="text-sm text-ink-2 mb-5">Loading jobs&hellip;</p>
+      <div id="loadingBlocks">
+        <div class="skeleton h-[320px] mb-10"></div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div class="skeleton h-24 col-span-2 md:col-span-1"></div><div class="skeleton h-24"></div><div class="skeleton h-24"></div><div class="skeleton h-24 hidden md:block"></div><div class="skeleton h-24 hidden md:block"></div>
+        </div>
+      </div>
     </div>
-  </div>
 
-  <main id="content" class="hidden">
-    <div class="max-w-6xl mx-auto px-4 pt-3">
-      <StatsGrid />
-      <Insights />
+    <div id="content" class="hidden">
+      <ApplyFirst />
+
+      <div class="max-w-6xl mx-auto px-4 md:px-6 pb-8">
+        <div class="mb-6">
+          <h2 id="viewTitle" class="font-serif text-[1.75rem] md:text-[2.25rem] leading-[1.12] text-ink">All categories</h2>
+          <p id="viewSub" class="mt-1.5 text-sm text-ink-2 num"></p>
+        </div>
+
+        <KeyFigures />
+
+        <!-- Phones: skip the charts and go straight to the list -->
+        <a href="#jobs" id="jumpToJobs" class="btn md:hidden mb-8 inline-flex items-center gap-1.5 rounded-full border border-ink text-ink bg-surface px-4 py-2 text-sm font-semibold">
+          <span>Jump to jobs (<span id="jumpCount" class="num">0</span>)</span><span aria-hidden="true">&darr;</span>
+        </a>
+
+        <Insights />
+        <FilterBar />
+        <JobTable />
+        <TaxCalculator />
+        <Methodology />
+      </div>
     </div>
-    <FilterBar />
-    <div class="max-w-6xl mx-auto px-4">
-      <SkillTags />
-      <JobTable />
-      <TaxCalculator />
-      <Methodology />
-    </div>
+    <p id="appliedStatus" class="sr-only" role="status" aria-live="polite"></p>
   </main>
 
   <Footer />
@@ -42,487 +59,742 @@ const base = import.meta.env.BASE_URL;
 
 <script is:inline define:vars={{ base }}>
 // ==================================================================
-var VER = '', INDEX, ALL_JOBS = [], FILTERED = [], PAGE = 1, PER_PAGE = 20;
-var SORT_KEY = 'date', SORT_ASC = false, charts = {};
-var TODAY_HK = hkDate(new Date()), LATEST_RUN = TODAY_HK;
+// STATE
+// ==================================================================
+var VER = '', INDEX = null;
+var JOBS = [];          // every unique job across all categories (index = _id)
+var BY_KEY = {};        // job key -> job
+var CAT_JOBS = {};      // category label -> unique jobs in that category
+var ALL_JOBS = [];      // jobs of the selected category (or all)
+var FILTERED = [], PAGE = 1, PER_PAGE = 25;
+var SORT_KEY = 'date', SORT_ASC = false, charts = {}, SHOW_APPLIED = false;
+var TODAY_HK = hkDate(new Date()), LATEST_RUN = TODAY_HK, UPDATED_TEXT = '';
 var DB = base + (base.endsWith('/') ? '' : '/') + 'data/';
 
-// Skill tag colors (soft pastels like Mexico scraper)
-var TAG_COLORS = [
-  {bg:'#fef2f2',text:'#dc2626'},{bg:'#fff7ed',text:'#ea580c'},{bg:'#fefce8',text:'#ca8a04'},
-  {bg:'#f0fdf4',text:'#16a34a'},{bg:'#eff6ff',text:'#2563eb'},{bg:'#faf5ff',text:'#9333ea'},
-  {bg:'#fdf2f8',text:'#db2777'},{bg:'#f0fdfa',text:'#0d9488'},{bg:'#fef9c3',text:'#a16207'},
-  {bg:'#e0e7ff',text:'#4f46e5'},{bg:'#ffe4e6',text:'#e11d48'},{bg:'#dcfce7',text:'#15803d'},
-  {bg:'#dbeafe',text:'#1d4ed8'},{bg:'#f3e8ff',text:'#7c3aed'},{bg:'#fce7f3',text:'#be185d'},
+// Design tokens (same values as tailwind.config.mjs and global.css)
+var C = {
+  ink: '#1C1B19', ink2: '#57534E', ink3: '#716A64', rule: '#E7E2DA', paper: '#FAF8F5',
+  accent: '#FF6B00', accentInk: '#C2410C', neutral: '#7A8896', neutralHover: '#5F6D7B'
+};
+var SRC_NAMES = { linkedin: 'LinkedIn', indeed: 'Indeed', google: 'Google Jobs', jobsdb: 'JobsDB', lever: 'Lever', greenhouse: 'Greenhouse' };
+var LEVEL_RANK = { 'Junior': 1, 'Mid': 2, 'Senior': 3, 'Manager': 4, 'Director+': 5 };
+var TEXT_KEYS = { title: 1, company: 1, work_mode: 1, source: 1, seniority: 1 };
+
+// Apply-first ranking: data roles are the main focus, web / AI automation / SEO secondary
+var CAT_BOOST = {
+  'Data Analyst': 12, 'Business Intelligence': 12, 'Fraud & Risk Analyst': 10,
+  'AI Agents & Automation': 8, 'Technical SEO': 7, 'Web Developer': 7, 'Product Analyst': 6,
+  'Python & Automation': 5, 'Full Stack Developer': 3, 'Data Engineer': 2
+};
+var AGE_BONUS = { 0: 15, 1: 12, 2: 8, 3: 5 };
+// Profile skills for the one-line "why" (strongest first; mirrors PROFILE_SKILLS in generate_data.py)
+var PROFILE = [
+  ['power bi', 'Power BI'], ['sql', 'SQL'], ['python', 'Python'], ['excel', 'Excel'],
+  ['data analysis', 'data analysis'], ['fraud', 'fraud'], ['technical seo', 'technical SEO'], ['seo', 'SEO'],
+  ['dashboard', 'dashboards'], ['reporting', 'reporting'], ['copilot studio', 'Copilot Studio'],
+  ['power automate', 'Power Automate'], ['aml', 'AML'], ['kyc', 'KYC'], ['risk management', 'risk management'],
+  ['google analytics', 'Google Analytics'], ['snowflake', 'Snowflake'], ['kpi', 'KPIs'], ['bi', 'BI'],
+  ['llm', 'LLMs'], ['generative ai', 'generative AI'], ['ai agent', 'AI agents'], ['javascript', 'JavaScript'],
+  ['php', 'PHP'], ['wordpress', 'WordPress'], ['mysql', 'MySQL'], ['html', 'HTML'], ['css', 'CSS'], ['r', 'R'],
+  ['data governance', 'data governance'], ['data quality', 'data quality']
 ];
+var REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var nf = function (n) { return Number(n || 0).toLocaleString('en-US'); };
+function $(id) { return document.getElementById(id); }
 
 // ==================================================================
-async function init() {
+// APPLIED MARKS (per browser; the page must work without storage)
+// ==================================================================
+var APPLIED_KEY = 'hkjobs.applied.v1', APPLIED = {};
+function loadApplied() {
   try {
-    INDEX = await (await fetch(DB + 'index.json', {cache: 'no-cache'})).json();
-    // Version the category files by the run that produced them: cached until the
-    // next daily run, never stale after it (cache-bust by version, not by clock)
-    VER = encodeURIComponent(INDEX.generated || '');
-    if (INDEX.generated) {
-      // Older runs wrote no offset; they ran on the UTC CI runner
-      var g = INDEX.generated;
-      var t = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(g) ? g : g + 'Z');
-      LATEST_RUN = hkDate(t);
-      var hh = new Date(t.getTime() + 8*3600e3).toISOString().slice(11,16);
-      document.getElementById('liveUpdated').textContent =
-        'Updated ' + (LATEST_RUN === TODAY_HK ? 'today' : LATEST_RUN) + ' ' + hh + ' HKT';
-    }
-    var sel = document.getElementById('categorySelect');
-    INDEX.categories.forEach(function(c) {
-      var o = document.createElement('option'); o.value = c; o.textContent = c;
-      sel.appendChild(o);
+    var raw = window.localStorage.getItem(APPLIED_KEY);
+    var o = raw ? JSON.parse(raw) : {};
+    if (o && typeof o === 'object' && !Array.isArray(o)) APPLIED = o;
+  } catch (e) { APPLIED = {}; }
+}
+function saveApplied() {
+  try { window.localStorage.setItem(APPLIED_KEY, JSON.stringify(APPLIED)); } catch (e) {}
+}
+function isApplied(j) { return Object.prototype.hasOwnProperty.call(APPLIED, j._k); }
+function toggleApplied(id) {
+  var j = JOBS[id]; if (!j) return;
+  var now;
+  if (isApplied(j)) { delete APPLIED[j._k]; now = false; }
+  else { APPLIED[j._k] = TODAY_HK; now = true; }
+  saveApplied();
+  $('appliedStatus').textContent = (now ? 'Marked as applied: ' : 'Unmarked: ') + (j.title || '') +
+    (now && !SHOW_APPLIED ? '. Hidden from the list; use Show applied to see it.' : '');
+  renderPicks();
+  applyFilters(true);
+  // Keep keyboard focus on the same job's button if it is still on screen
+  var again = document.querySelector('#picksList [data-applied="' + id + '"], #jobTableBody [data-applied="' + id + '"], #jobCards [data-applied="' + id + '"]');
+  if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
+  else $('showAppliedBtn').focus({ preventScroll: true });
+}
+
+// ==================================================================
+// HELPERS
+// ==================================================================
+// Hong Kong calendar date (UTC+8, no DST) as YYYY-MM-DD
+function hkDate(d) { return new Date(d.getTime() + 8 * 3600e3).toISOString().slice(0, 10); }
+function ageDays(j) {
+  if (!j.date) return null;
+  return Math.max(0, Math.round((Date.parse(TODAY_HK) - Date.parse(j.date)) / 86400e3));
+}
+function isNew(j) { return !!j.first_seen && j.first_seen >= LATEST_RUN; }
+function jobKey(j) {
+  var u = String(j.url || '').trim().toLowerCase().replace(/\/$/, '');
+  return u || ('t:' + String(j.title || '').toLowerCase() + '|' + String(j.company || '').toLowerCase());
+}
+function hasRealSalary(j) { return j.salary_num > 0 && !j.salary_est; }
+function median(arr) {
+  if (!arr.length) return 0;
+  var s = arr.slice().sort(function (a, b) { return a - b; }), m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
+// Scraped text is untrusted: escape it before it goes into any HTML string.
+var HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '`': '&#96;' };
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"'`]/g, function (ch) { return HTML_ESCAPES[ch]; }); }
+// For href attributes: only http(s), and nothing that can break out of the attribute.
+function safeUrl(u) {
+  u = String(u || '').trim();
+  if (!/^https?:\/\//i.test(u)) return '#';
+  return u.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ==================================================================
+// LOAD
+// ==================================================================
+async function init() {
+  loadApplied();
+  try {
+    INDEX = await (await fetch(DB + 'index.json', { cache: 'no-cache' })).json();
+  } catch (e) { showErr('Could not load the job data. Try again in a minute.'); return; }
+
+  // Version the category files by the run that produced them: cached until the
+  // next daily run, never stale after it (cache-bust by version, not by clock)
+  VER = encodeURIComponent(INDEX.generated || '');
+  if (INDEX.generated) {
+    // Older runs wrote no offset; they ran on the UTC CI runner
+    var g = INDEX.generated;
+    var t = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(g) ? g : g + 'Z');
+    LATEST_RUN = hkDate(t);
+    var hh = new Date(t.getTime() + 8 * 3600e3).toISOString().slice(11, 16);
+    UPDATED_TEXT = 'Updated ' + (LATEST_RUN === TODAY_HK ? 'today' : LATEST_RUN) + ' ' + hh + ' HKT';
+    $('updateDate').textContent = LATEST_RUN + ' ' + hh + ' HKT';
+  }
+
+  var sel = $('categorySelect');
+  (INDEX.categories || []).forEach(function (c) {
+    var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+  });
+
+  var entries = INDEX.data || [];
+  if (!entries.length) { showErr('No data yet. The daily run has not produced any files.'); return; }
+
+  var files = await Promise.all(entries.map(function (e) {
+    return fetch(DB + e.file + '?v=' + VER).then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  }));
+
+  // Merge: one object per job (dedup by URL), remembering every category it appears in
+  files.forEach(function (d, i) {
+    if (!d || !Array.isArray(d.jobs)) return;
+    var cat = entries[i].query, list = CAT_JOBS[cat] || (CAT_JOBS[cat] = []), inCat = {};
+    d.jobs.forEach(function (j) {
+      var k = jobKey(j), canon = BY_KEY[k];
+      if (!canon) {
+        canon = j; j._k = k; j._id = JOBS.length; j._cats = []; j._relMax = j.relevance || 0;
+        BY_KEY[k] = j; JOBS.push(j);
+      } else {
+        canon._relMax = Math.max(canon._relMax, j.relevance || 0);
+      }
+      if (canon._cats.indexOf(cat) === -1) canon._cats.push(cat);
+      if (!inCat[k]) { inCat[k] = 1; list.push(canon); }
     });
-    if (INDEX.data && INDEX.data.length > 0) { await search(); }
-    else { showErr('No data. Run generate_data.py first.'); }
-  } catch(e) { showErr('Failed to load data.'); }
+  });
+  if (!JOBS.length) { showErr('Could not load the job files. Try again in a minute.'); return; }
+
+  // Hero live line (all categories)
+  var week = JOBS.filter(function (j) { var a = ageDays(j); return a !== null && a < 7; }).length;
+  var newToday = JOBS.filter(isNew).length;
+  $('liveLine').textContent = nf(week) + ' posted this week | ' + nf(newToday) + ' new today' +
+    (UPDATED_TEXT ? ' | ' + UPDATED_TEXT : '');
+
+  setupChartDefaults();
+  renderPicks();
+  search();
+  $('loading').classList.add('hidden');
+  $('content').classList.remove('hidden');
 }
 
 function showErr(m) {
-  document.getElementById('loading').innerHTML = '<p class="text-red-400 text-center py-20 text-sm">'+m+'</p>';
+  $('loadingText').textContent = m;
+  $('loadingBlocks').classList.add('hidden');
 }
 
 // ==================================================================
-async function search() {
-  var cat = document.getElementById('categorySelect').value;
-  document.getElementById('loading').style.display = 'flex';
-  document.getElementById('content').classList.add('hidden');
+// CATEGORY (Search / apply)
+// ==================================================================
+function search() {
+  var cat = $('categorySelect').value;
+  ALL_JOBS = cat ? (CAT_JOBS[cat] || []) : JOBS;
+  var label = cat || 'All categories';
+  $('viewTitle').textContent = cat ? cat + ' jobs in Hong Kong' : 'All categories';
+  $('viewSub').textContent = ALL_JOBS.length
+    ? nf(ALL_JOBS.length) + ' live ads' + (cat ? '' : ' across ' + Object.keys(CAT_JOBS).length + ' categories') + ', none older than 45 days.'
+    : 'No ads in ' + label + ' in the latest run.';
+  renderFigures();
+  renderCharts();
+  PAGE = 1;
+  applyFilters();
+}
 
-  var entries = INDEX.data;
-  if (cat) entries = entries.filter(function(d){return d.query===cat;});
-  if (!entries.length) { alert('No data for this category.'); done(); return; }
-
-  ALL_JOBS = [];
-  var withSal = 0, salBrackets = {};
-
-  var files = await Promise.all(entries.slice(0, 30).map(function(e) {
-    return fetch(DB + e.file + '?v=' + VER).then(function(r){ return r.json(); })
-      .catch(function(){ return null; });
-  }));
-  for (var i = 0; i < files.length; i++) {
-    try {
-      var d = files[i]; if (!d) continue;
-      ALL_JOBS = ALL_JOBS.concat(d.jobs || []);
-      withSal += d.stats ? d.stats.with_salary || 0 : 0;
-      if (d.charts && d.charts.salary_brackets) {
-        for (var k in d.charts.salary_brackets) {
-          salBrackets[k] = (salBrackets[k]||0) + d.charts.salary_brackets[k];
-        }
-      }
-    } catch(e) {}
-  }
-
-  // Dedup by URL
-  var seen = {}, uniq = [];
-  ALL_JOBS.forEach(function(j) {
-    var u = (j.url||'').toLowerCase().replace(/\/$/,'');
-    if (u && seen[u]) return; if (u) seen[u] = true; uniq.push(j);
+// ==================================================================
+// APPLY FIRST
+// ==================================================================
+function rankPicks() {
+  var cands = [];
+  JOBS.forEach(function (j) {
+    var a = ageDays(j);
+    if (a === null || a > 3) return;
+    if (j.mandarin === 'Required') return;
+    if (j.seniority === 'Director+' || j.seniority === 'Manager') return;
+    if (isApplied(j)) return;
+    if (/data scientist|research scientist/i.test(j.title || '')) return;
+    var boost = 0;
+    j._cats.forEach(function (c) { boost = Math.max(boost, CAT_BOOST[c] || 0); });
+    var score = (j._relMax || 0) * 0.5 + (Number(j.match) || 0) * 0.4 + boost + (AGE_BONUS[a] || 0)
+      - (j.mandarin === 'Preferred' ? 8 : 0) + (j.ttps ? 3 : 0);
+    cands.push({ j: j, s: score });
   });
-  ALL_JOBS = uniq;
+  cands.sort(function (x, y) { return y.s - x.s; });
+  return cands.slice(0, 8).map(function (c) { return c.j; });
+}
 
-  // Stats
-  var n = ALL_JOBS.length;
-  var comps = {}; ALL_JOBS.forEach(function(j){comps[j.company]=1;});
-  var ttps = ALL_JOBS.filter(function(j){return j.ttps;}).length;
-  var sals = ALL_JOBS.filter(function(j){return j.salary_num>0;}).map(function(j){return j.salary_num;}).sort(function(a,b){return a-b;});
-  var medSal = sals.length ? sals[Math.floor(sals.length/2)] : 0;
-  var salPct = n > 0 ? Math.round((withSal/n)*100) : 0;
-
-  document.getElementById('statJobs').textContent = n.toLocaleString();
-  var fresh = ALL_JOBS.filter(function(j){ var a = ageDays(j); return a !== null && a < 7; }).length;
-  var newToday = ALL_JOBS.filter(isNew).length;
-  document.getElementById('liveJobs').textContent =
-    fresh.toLocaleString() + ' posted this week | ' + newToday.toLocaleString() + ' new today';
-  document.getElementById('statCompanies').textContent = Object.keys(comps).length.toLocaleString();
-  document.getElementById('statTTPS').textContent = ttps.toLocaleString();
-
-  // Sources count
-  var srcSet = {};
-  ALL_JOBS.forEach(function(j){ srcSet[j.source] = 1; });
-  var srcEl = document.getElementById('statSources');
-  if (srcEl) srcEl.textContent = Object.keys(srcSet).length;
-
-  // Median from real + estimated salary_num
-  var allSalNums = ALL_JOBS.filter(function(j){return j.salary_num>0;}).map(function(j){return j.salary_num;}).sort(function(a,b){return a-b;});
-  var estCount = ALL_JOBS.filter(function(j){return j.salary_est;}).length;
-  medSal = allSalNums.length ? allSalNums[Math.floor(allSalNums.length/2)] : 0;
-
-  if (medSal > 0) {
-    document.getElementById('statSalary').textContent = 'HK$' + medSal.toLocaleString();
-  } else {
-    document.getElementById('statSalary').textContent = 'N/A';
+function whyLine(j) {
+  var have = {}, hits = [];
+  (j.skills || []).forEach(function (s) { have[String(s).toLowerCase()] = 1; });
+  for (var i = 0; i < PROFILE.length && hits.length < 3; i++) {
+    var p = PROFILE[i];
+    if (!have[p[0]]) continue;
+    if (p[0] === 'bi' && have['power bi']) continue;
+    if (p[0] === 'seo' && have['technical seo']) continue;
+    hits.push(p[1]);
   }
-
-  // Skill tags
-  renderSkillTags();
-
-  // Charts
-  renderCharts(salBrackets);
-
-  // Table
-  FILTERED = ALL_JOBS.slice(); PAGE = 1; applyFilters();
-
-  done();
+  var parts = [];
+  if (hits.length) parts.push('Asks for ' + hits.join(', '));
+  else if (j._cats && j._cats.length) parts.push('Fits ' + j._cats[0]);
+  if (!j.mandarin) parts.push('no Chinese mentioned');
+  else if (j.mandarin === 'Preferred') parts.push('Chinese preferred, not required');
+  if (j.ttps) parts.push('TTPS-friendly employer');
+  return parts.join('; ');
 }
 
-function done() {
-  document.getElementById('loading').style.display = 'none';
-  document.getElementById('content').classList.remove('hidden');
-}
-
-// ==================================================================
-// SKILL TAGS (colorful pills like Mexico scraper)
-// ==================================================================
-function renderSkillTags() {
-  var counts = {};
-  ALL_JOBS.forEach(function(j){ (j.skills||[]).forEach(function(s){ counts[s]=(counts[s]||0)+1; }); });
-  var skills = Object.entries(counts).sort(function(a,b){return b[1]-a[1];}).slice(0,15);
-
-  var wrap = document.getElementById('skillTagsWrap');
-  var sec = document.getElementById('skillTagsSection');
-
-  if (skills.length < 3) { sec.classList.add('hidden'); return; }
-  sec.classList.remove('hidden');
-
-  wrap.innerHTML = skills.map(function(s, i) {
-    var c = TAG_COLORS[i % TAG_COLORS.length];
-    return '<span style="background:'+c.bg+';color:'+c.text+'" class="px-2.5 py-1 rounded-full text-xs font-medium">'
-      + esc(s[0]) + ' <span class="opacity-70">' + s[1] + '</span></span>';
+function renderPicks() {
+  var picks = rankPicks();
+  $('applyFirstCount').textContent = picks.length ? 'Top ' + picks.length + ' of the last 4 days' : '';
+  $('picksEmpty').classList.toggle('hidden', picks.length > 0);
+  var sep = '<span aria-hidden="true" class="text-rule-strong px-1.5">|</span>';
+  $('picksList').innerHTML = picks.map(function (j, i) {
+    var p = jobParts(j);
+    var meta = [p.salaryShort, p.level, p.mode].filter(Boolean).join(sep);
+    return '<li class="px-4 md:px-6 py-4 grid grid-cols-[1.75rem_1fr] md:grid-cols-[2.5rem_1fr_auto] gap-x-3 md:gap-x-4 gap-y-2 items-start">'
+      + '<span class="font-serif text-2xl leading-none text-accent-ink num pt-0.5" aria-hidden="true">' + (i + 1) + '</span>'
+      + '<div class="min-w-0">'
+      +   '<p class="text-[0.9375rem] md:text-base leading-snug">' + p.titleLink + '</p>'
+      +   '<p class="mt-0.5 text-sm text-ink-2">' + p.company + sep + p.posted + '</p>'
+      +   (meta ? '<p class="mt-1 text-sm text-ink-2">' + meta + '</p>' : '')
+      +   '<p class="mt-1 text-sm text-ink-3">' + esc(whyLine(j)) + '</p>'
+      + '</div>'
+      + '<div class="col-start-2 md:col-start-auto flex items-center gap-3 md:pt-0.5">'
+      +   (p.url !== '#' ? '<a href="' + p.url + '" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-accent-ink underline underline-offset-4 decoration-[#F2B48A] hover:decoration-accent-ink">Open ad<span class="sr-only">: ' + p.title + '</span></a>' : '')
+      +   p.appliedBtn
+      + '</div>'
+      + '</li>';
   }).join('');
 }
 
 // ==================================================================
-// CHARTS (orange accent, only render if data exists)
+// KEY FIGURES (selected category, independent of table filters)
 // ==================================================================
-function renderCharts(salBrackets) {
-  var ax = '#525252', grid = '#1a1a1a';
-  // Salary bracket colors (like Mexico: each bracket a different color)
-  var bracketColors = ['#ea580c','#16a34a','#f97316','#2563eb','#7c3aed','#dc2626'];
+function renderFigures() {
+  var n = ALL_JOBS.length;
+  var week = ALL_JOBS.filter(function (j) { var a = ageDays(j); return a !== null && a < 7; }).length;
+  var newToday = ALL_JOBS.filter(isNew).length;
+  var noReq = ALL_JOBS.filter(function (j) { return j.mandarin !== 'Required'; }).length;
+  var real = ALL_JOBS.filter(hasRealSalary).map(function (j) { return j.salary_num; });
+  var comps = {};
+  ALL_JOBS.forEach(function (j) { if (j.company && j.company !== 'Confidential') comps[j.company] = 1; });
+  var med = median(real);
 
-  // --- Salary Brackets (horizontal bars like Mexico "Donde esta el dinero?") ---
-  if (charts.salary) charts.salary.destroy();
-  var salSec = document.getElementById('salarySection');
-  var salLabels = Object.keys(salBrackets||{});
-  var salValues = Object.values(salBrackets||{});
-  var salTotal = salValues.reduce(function(a,b){return a+b;},0);
+  $('figWeek').textContent = nf(week);
+  $('figWeekN').textContent = 'of ' + nf(n) + ' live ads, by Hong Kong posting date';
+  $('figNew').textContent = nf(newToday);
+  $('figNoChinese').textContent = n ? Math.round(noReq / n * 100) + '%' : '0%';
+  $('figNoChineseN').textContent = nf(noReq) + ' of ' + nf(n) + ' ads';
+  $('figSalary').textContent = real.length ? 'HK$' + nf(med) : 'Not enough';
+  $('figSalaryN').textContent = nf(real.length) + ' of ' + nf(n) + ' publish a salary';
+  $('figCompanies').textContent = nf(Object.keys(comps).length);
+  if (window.hkTaxPrefill) window.hkTaxPrefill(real.length ? med : 0);
+}
 
-  if (salTotal > 0) {
-    salSec.style.display = '';
-    charts.salary = new Chart(document.getElementById('salaryChart'), {
-      type: 'bar',
-      data: {
-        labels: salLabels,
-        datasets: [{
-          data: salValues,
-          backgroundColor: bracketColors.slice(0, salLabels.length),
-          borderRadius: 3,
-        }]
-      },
-      options: {
-        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function(ctx) {
-                var pct = salTotal > 0 ? Math.round(ctx.raw/salTotal*100) : 0;
-                return ctx.raw + ' (' + pct + '%)';
-              }
-            }
-          }
-        },
-        scales: {
-          x: { ticks:{color:ax,font:{size:10}}, grid:{color:grid} },
-          y: { ticks:{color:'#d4d4d4',font:{size:11}}, grid:{display:false} },
-        },
-      },
-    });
-  } else { salSec.style.display = 'none'; }
-
-  // --- Salary by Seniority ---
-  if (charts.seniority) charts.seniority.destroy();
-  var senSec = document.getElementById('senioritySection');
-  var senSal = {};
-  ALL_JOBS.forEach(function(j) {
-    if (j.salary_num > 0 && j.seniority) {
-      if (!senSal[j.seniority]) senSal[j.seniority] = [];
-      senSal[j.seniority].push(j.salary_num);
-    }
+// ==================================================================
+// CHARTS
+// ==================================================================
+function setupChartDefaults() {
+  if (typeof Chart === 'undefined') return;
+  var d = Chart.defaults;
+  d.font.family = 'Inter, system-ui, sans-serif';
+  d.font.size = 12;
+  d.color = C.ink2;
+  d.borderColor = C.rule;
+  if (REDUCED_MOTION) d.animation = false; else d.animation.duration = 250;
+  d.maintainAspectRatio = false;
+  d.plugins.legend.display = false;
+  Object.assign(d.plugins.tooltip, {
+    backgroundColor: C.ink, titleColor: C.paper, bodyColor: C.paper, padding: 8, cornerRadius: 4,
+    displayColors: false, titleFont: { weight: '600', size: 12 }, bodyFont: { size: 12 }, caretSize: 5
   });
-  var levels = Object.entries(senSal)
-    .map(function(e){var s=e[1].sort(function(a,b){return a-b;}); return {l:e[0],m:s[Math.floor(s.length/2)],n:s.length};})
-    .filter(function(d){return d.n>=2;})
-    .sort(function(a,b){return b.m-a.m;});
+  Object.assign(d.elements.bar, { borderRadius: 3, borderSkipped: 'start' });
+  d.datasets.bar.maxBarThickness = 22;
+  d.datasets.bar.categoryPercentage = 0.8;
+  d.datasets.bar.barPercentage = 0.86;
+  d.scale.grid.display = false;
+  d.scale.border = Object.assign(d.scale.border || {}, { display: false });
+}
 
-  if (levels.length >= 2) {
-    senSec.style.display = '';
-    charts.seniority = new Chart(document.getElementById('seniorityChart'), {
+// Direct labels at the end of horizontal bars (or on top of vertical ones).
+// The highlighted bar's label is set in ink and semibold.
+function endLabels(text, strong, vertical) {
+  strong = strong || function () { return false; };
+  return {
+    id: 'endLabels',
+    afterDatasetsDraw: function (chart) {
+      var ctx = chart.ctx, meta = chart.getDatasetMeta(0);
+      ctx.save();
+      ctx.textBaseline = vertical ? 'bottom' : 'middle';
+      ctx.textAlign = vertical ? 'center' : 'left';
+      chart.data.datasets[0].data.forEach(function (val, i) {
+        var el = meta.data[i];
+        if (!el) return;
+        var label = text(i, val);
+        if (label === '') return;
+        var s = strong(i);
+        ctx.font = (s ? 600 : 500) + ' ' + (vertical ? 11 : 12) + 'px Inter, system-ui, sans-serif';
+        ctx.fillStyle = s ? C.ink : C.ink2;
+        if (vertical) ctx.fillText(label, el.x, el.y - 4);
+        else ctx.fillText(label, el.x + 6, el.y);
+      });
+      ctx.restore();
+    }
+  };
+}
+function yCats(extra) {
+  return { grid: { display: false }, ticks: Object.assign({ color: C.ink2, font: { size: 12 }, padding: 6, autoSkip: false }, extra || {}) };
+}
+function xHidden(max) { return { display: false, beginAtZero: true, suggestedMax: max }; }
+function colorsFor(n, hi) { var a = []; for (var i = 0; i < n; i++) a.push(i === hi ? C.accent : C.neutral); return a; }
+function hoverFor(n, hi) { var a = []; for (var i = 0; i < n; i++) a.push(i === hi ? C.accentInk : C.neutralHover); return a; }
+function setEmpty(canvasId, emptyId, isEmpty) {
+  $(canvasId).classList.toggle('hidden', isEmpty);
+  if (emptyId) $(emptyId).classList.toggle('hidden', !isEmpty);
+}
+function hbar(id, labels, values, hi, labelFn, tooltipFn, fullNames) {
+  var max = Math.max.apply(null, values.concat([1]));
+  charts[id] = new Chart($(id), {
+    type: 'bar',
+    data: { labels: labels, datasets: [{ data: values, backgroundColor: colorsFor(values.length, hi), hoverBackgroundColor: hoverFor(values.length, hi) }] },
+    options: {
+      indexAxis: 'y',
+      layout: { padding: { left: 6 } },
+      plugins: { tooltip: { callbacks: {
+        title: function (items) { return fullNames ? fullNames[items[0].dataIndex] : items[0].label; },
+        label: tooltipFn
+      } } },
+      scales: {
+        x: xHidden(max * (window.innerWidth < 480 ? 1.45 : 1.25)),
+        y: yCats({
+          font: function (c) { return { size: 12, weight: c.index === hi ? '600' : '400' }; },
+          color: function (c) { return c.index === hi ? C.ink : C.ink2; }
+        })
+      }
+    },
+    plugins: [endLabels(labelFn, function (i) { return i === hi; })]
+  });
+}
+
+var BRACKETS = ['<HK$15K', 'HK$15-25K', 'HK$25-35K', 'HK$35-50K', 'HK$50-80K', 'HK$80K+'];
+function bracketIndex(s) {
+  if (s < 15000) return 0;
+  if (s < 25000) return 1;
+  if (s < 35000) return 2;
+  if (s < 50000) return 3;
+  if (s < 80000) return 4;
+  return 5;
+}
+
+function renderCharts() {
+  Object.keys(charts).forEach(function (k) { charts[k].destroy(); });
+  charts = {};
+  if (typeof Chart === 'undefined') {
+    $('chartsUnavailable').classList.remove('hidden');
+    return;
+  }
+  var n = ALL_JOBS.length || 1;
+  var pct = function (v, t) { return Math.round(v / (t || 1) * 100); };
+
+  // 1. When were they posted? Last 14 HK days, today highlighted
+  var dayKeys = [], dayLabels = [], counts = {};
+  var base0 = Date.parse(TODAY_HK);
+  for (var d = 13; d >= 0; d--) {
+    var dt = new Date(base0 - d * 86400e3);
+    var key = dt.toISOString().slice(0, 10);
+    dayKeys.push(key);
+    dayLabels.push(d === 0 ? 'Today' : dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }));
+    counts[key] = 0;
+  }
+  ALL_JOBS.forEach(function (j) { if (j.date && counts.hasOwnProperty(j.date)) counts[j.date]++; });
+  var dayVals = dayKeys.map(function (k) { return counts[k]; });
+  var in14 = dayVals.reduce(function (a, b) { return a + b; }, 0);
+  setEmpty('postedChart', 'postedEmpty', in14 === 0);
+  $('postedSub').textContent = nf(in14) + ' of ' + nf(ALL_JOBS.length) + ' ads were posted in the last 14 Hong Kong days, ' + nf(dayVals[13]) + ' of them today (orange).';
+  $('postedChart').setAttribute('aria-label', 'Jobs posted per day, last 14 days: ' +
+    dayKeys.map(function (k, i) { return dayLabels[i] + ' ' + dayVals[i]; }).join(', '));
+  if (in14) {
+    charts.postedChart = new Chart($('postedChart'), {
       type: 'bar',
-      data: {
-        labels: levels.map(function(d){return d.l;}),
-        datasets: [{ data: levels.map(function(d){return d.m;}), backgroundColor: '#f97316', borderRadius: 3 }]
-      },
+      data: { labels: dayLabels, datasets: [{ data: dayVals, backgroundColor: colorsFor(14, 13), hoverBackgroundColor: hoverFor(14, 13) }] },
       options: {
-        responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        layout: { padding: { top: 18 } },
+        plugins: { tooltip: { callbacks: { title: function (it) { return dayKeys[it[0].dataIndex]; }, label: function (c) { return nf(c.raw) + ' posted'; } } } },
         scales: {
-          x:{ticks:{color:ax,font:{size:10}},grid:{display:false}},
-          y:{ticks:{color:ax,font:{size:10},callback:function(v){return 'HK$'+v.toLocaleString();}},grid:{color:grid}},
-        },
+          x: { grid: { display: false }, ticks: { color: C.ink2, font: { size: 11 }, maxRotation: 0, autoSkip: false,
+            // every other day, counted back from today so "Today" is always labelled
+            callback: function (v, i) { return (13 - i) % (window.innerWidth < 640 ? 3 : 2) === 0 ? dayLabels[i] : ''; },
+            font: function (c) { return { size: 11, weight: c.index === 13 ? '600' : '400' }; } } },
+          y: { display: false, beginAtZero: true }
+        }
       },
+      plugins: [endLabels(function (i, v) { return v ? nf(v) : ''; }, function (i) { return i === 13; }, true)]
     });
-  } else { senSec.style.display = 'none'; }
+  }
 
-  // --- Top Employers (horizontal bars, green like Mexico) ---
-  if (charts.employers) charts.employers.destroy();
-  var empSec = document.getElementById('employersSection');
-  var compCounts = {};
-  ALL_JOBS.forEach(function(j){if(j.company&&j.company!=='Confidential')compCounts[j.company]=(compCounts[j.company]||0)+1;});
-  var emps = Object.entries(compCounts).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
+  // 2. Do they need Chinese? Not mentioned is the answer worth seeing
+  var req = 0, pref = 0, none = 0;
+  ALL_JOBS.forEach(function (j) {
+    if (j.mandarin === 'Required') req++;
+    else if (j.mandarin) pref++;
+    else none++;
+  });
+  var chTotal = req + pref + none;
+  $('chineseSub').textContent = pct(none, chTotal) + '% of ads do not mention Chinese at all. Read from the full ad text; Cantonese or Mandarin both count.';
+  $('chineseChart').setAttribute('aria-label', 'Chinese required ' + req + ', preferred or mentioned ' + pref + ', not mentioned ' + none);
+  hbar('chineseChart', ['Required', 'Preferred or mentioned', 'Not mentioned'], [req, pref, none], 2,
+    function (i, v) { return nf(v) + ' (' + pct(v, chTotal) + '%)'; },
+    function (c) { return nf(c.raw) + ' ads (' + pct(c.raw, chTotal) + '%)'; });
 
-  if (emps.length >= 3) {
-    empSec.style.display = '';
-    charts.employers = new Chart(document.getElementById('employersChart'), {
-      type: 'bar',
-      data: {
-        labels: emps.map(function(e){return e[0].length>35?e[0].slice(0,33)+'...':e[0];}),
-        datasets: [{ data: emps.map(function(e){return e[1];}), backgroundColor: '#16a34a', borderRadius: 3 }]
-      },
-      options: {
-        indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
-        scales: {
-          x:{ticks:{color:ax,font:{size:10}},grid:{color:grid}},
-          y:{ticks:{color:'#d4d4d4',font:{size:10}},grid:{display:false}},
-        },
-      },
-    });
-  } else { empSec.style.display = 'none'; }
+  // 3. Where is the money? Published salaries only, median bracket highlighted
+  var real = ALL_JOBS.filter(hasRealSalary).map(function (j) { return j.salary_num; });
+  var bVals = [0, 0, 0, 0, 0, 0];
+  real.forEach(function (s) { bVals[bracketIndex(s)]++; });
+  var med = median(real);
+  var enough = real.length >= 3;
+  setEmpty('salaryChart', 'salaryEmpty', !enough);
+  $('salaryTitle').textContent = enough ? 'Half of posted salaries are below HK$' + nf(med) : 'Where is the money?';
+  $('salarySub').textContent = enough
+    ? 'Monthly pay in the ' + nf(real.length) + ' of ' + nf(ALL_JOBS.length) + ' ads that publish it. The bracket with the median is in orange. Estimates are left out.'
+    : 'Only ' + nf(real.length) + ' of ' + nf(ALL_JOBS.length) + ' ads publish a salary. Estimates are left out.';
+  if (enough) {
+    $('salaryChart').setAttribute('aria-label', 'Ads by published monthly salary: ' + BRACKETS.map(function (b, i) { return b + ' ' + bVals[i]; }).join(', '));
+    hbar('salaryChart', BRACKETS, bVals, bracketIndex(med),
+      function (i, v) { return nf(v) + ' (' + pct(v, real.length) + '%)'; },
+      function (c) { return nf(c.raw) + ' ads (' + pct(c.raw, real.length) + '%)'; });
+  }
 
-  // Empty state
-  var anyChart = salTotal > 0 || levels.length >= 2 || emps.length >= 3;
-  document.getElementById('insightsEmpty').classList.toggle('hidden', anyChart);
+  // 4. Which skills do they ask for? Top 10, the most asked highlighted
+  var sk = {};
+  ALL_JOBS.forEach(function (j) { (j.skills || []).forEach(function (s) { sk[s] = (sk[s] || 0) + 1; }); });
+  var top = Object.keys(sk).map(function (k) { return [k, sk[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+  setEmpty('skillsChart', 'skillsEmpty', !top.length);
+  if (top.length) {
+    $('skillsSub').textContent = top[0][0].charAt(0).toUpperCase() + top[0][0].slice(1) + ' leads: ' + pct(top[0][1], n) + '% of ads mention it. Jobs that mention each skill.';
+    $('skillsChart').setAttribute('aria-label', 'Most requested skills: ' + top.map(function (t) { return t[0] + ' ' + t[1]; }).join(', '));
+    hbar('skillsChart', top.map(function (t) { return t[0]; }), top.map(function (t) { return t[1]; }), 0,
+      function (i, v) { return nf(v); },
+      function (c) { return nf(c.raw) + ' ads mention it (' + pct(c.raw, n) + '%)'; });
+  }
+
+  // 5. Who is hiring? Top 8 named employers
+  var cc = {};
+  ALL_JOBS.forEach(function (j) { if (j.company && j.company !== 'Confidential') cc[j.company] = (cc[j.company] || 0) + 1; });
+  var emps = Object.keys(cc).map(function (k) { return [k, cc[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8);
+  var okEmp = emps.length >= 3;
+  setEmpty('employersChart', 'employersEmpty', !okEmp);
+  if (okEmp) {
+    var maxLen = window.innerWidth < 480 ? 20 : 34;
+    $('employersSub').textContent = emps[0][0] + ' has the most ads (' + nf(emps[0][1]) + '). Confidential employers are left out.';
+    $('employersChart').setAttribute('aria-label', 'Employers with the most ads: ' + emps.map(function (e) { return e[0] + ' ' + e[1]; }).join(', '));
+    hbar('employersChart', emps.map(function (e) { return e[0].length > maxLen ? e[0].slice(0, maxLen - 1).trim() + '…' : e[0]; }),
+      emps.map(function (e) { return e[1]; }), 0,
+      function (i, v) { return nf(v); },
+      function (c) { return nf(c.raw) + ' open ads'; },
+      emps.map(function (e) { return e[0]; }));
+  }
+}
+
+// ==================================================================
+// JOB PARTS (every scraped field escaped here, once)
+// ==================================================================
+// En and em dashes in scraped salary ranges become a plain hyphen
+var DASHES = new RegExp('\\s*[' + String.fromCharCode(8211, 8212) + ']\\s*', 'g');
+function salaryShort(j) {
+  return String(j.salary || '')
+    .replace(DASHES, ' - ')
+    .replace(/\s*per month/i, ' a month')
+    .replace(/^HKD\$\s*/i, 'HK$')
+    .trim();
+}
+function postedText(j) {
+  var a = ageDays(j);
+  if (a === null) return 'Date unknown';
+  if (a === 0) return 'Today';
+  if (a === 1) return 'Yesterday';
+  return a + ' days ago';
+}
+function jobParts(j) {
+  var url = safeUrl(j.url), title = esc(j.title);
+  var titleLink = url !== '#'
+    ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="font-medium text-ink hover:text-accent-ink hover:underline underline-offset-2 transition-colors">' + title + '</a>'
+    : '<span class="font-medium text-ink">' + title + '</span>';
+  var a = ageDays(j);
+  var newB = isNew(j) ? ' <span class="badge border border-ink text-ink">New</span>' : '';
+  var posted = '<span class="num ' + (a === null ? 'text-ink-3' : (a <= 1 ? 'text-ink font-medium' : 'text-ink-2')) + '"' +
+    (j.date ? ' title="Posted ' + esc(j.date) + (j.first_seen ? ', first seen ' + esc(j.first_seen) : '') + '"' : '') + '>' +
+    postedText(j) + '</span>' + newB;
+
+  var chinese = '';
+  if (j.mandarin === 'Required') chinese = '<span class="badge badge-warn" title="The ad requires Chinese (Cantonese or Mandarin)">Chinese required</span>';
+  else if (j.mandarin === 'Preferred') chinese = '<span class="badge badge-neutral" title="Chinese is a plus, not required">Chinese preferred</span>';
+  else if (j.mandarin) chinese = '<span class="badge badge-neutral" title="The ad mentions Chinese">Chinese mentioned</span>';
+  var ttps = j.ttps ? '<span class="badge badge-outline" title="Employer known to hire internationally, or the ad mentions visa support">TTPS</span>' : '';
+
+  var sal = salaryShort(j), salHtml, salTxt;
+  if (hasRealSalary(j)) { salHtml = '<span class="text-ink font-medium">' + esc(sal) + '</span>'; salTxt = esc(sal); }
+  else if (j.salary_est) {
+    var tip = 'Estimate, ' + (j.salary_confidence || 'low').toLowerCase() + ' confidence' + (j.salary_basis ? ': ' + j.salary_basis : '');
+    salHtml = '<span class="text-ink-3" title="' + esc(tip) + '">' + esc(sal) + ' <span class="text-xs">est</span></span>';
+    salTxt = '<span class="text-ink-3">' + esc(sal) + ' est</span>';
+  } else { salHtml = '<span class="text-ink-3">Not given</span>'; salTxt = ''; }
+
+  var applied = isApplied(j);
+  var appliedBtn = '<button type="button" class="applied-btn" data-applied="' + j._id + '" aria-pressed="' + applied + '"' +
+    ' aria-label="' + (applied ? 'Applied to ' : 'Mark applied: ') + title + '">' +
+    (applied ? '<span aria-hidden="true">&#10003;</span> Applied' : 'Mark applied') + '</button>';
+
+  return {
+    url: url, title: title, titleLink: titleLink, company: esc(j.company || 'Company not given'),
+    posted: posted, chinese: chinese, ttps: ttps, salHtml: salHtml, salaryShort: salTxt,
+    level: esc(j.seniority || ''), mode: esc(j.work_mode || ''),
+    match: Number(j.match) || 0, source: esc(SRC_NAMES[j.source] || j.source || ''),
+    appliedBtn: appliedBtn, applied: applied
+  };
 }
 
 // ==================================================================
 // TABLE
 // ==================================================================
-function applyFilters() {
-  var mobileSearch = document.getElementById('searchInput');
-  var desktopSearch = document.getElementById('searchInputDesktop');
-  var q = (mobileSearch && mobileSearch.offsetParent !== null ? mobileSearch.value : desktopSearch ? desktopSearch.value : '').toLowerCase();
-  var sen = document.getElementById('seniorityFilter').value;
-  var wm = document.getElementById('workModeFilter').value;
-  var src = document.getElementById('sourceFilter').value;
-  var ttps = document.getElementById('ttpsFilter').checked;
-  var posted = document.getElementById('postedFilter').value;
-  var lang = document.getElementById('langFilter').value;
-  var onlyNew = document.getElementById('newFilter').checked;
+function applyFilters(keepPage) {
+  var q = ($('searchInput').value || '').toLowerCase().trim();
+  var sen = $('seniorityFilter').value;
+  var wm = $('workModeFilter').value;
+  var src = $('sourceFilter').value;
+  var ttps = $('ttpsFilter').checked;
+  var posted = $('postedFilter').value;
+  var lang = $('langFilter').value;
+  var onlyNew = $('newFilter').checked;
 
-  FILTERED = ALL_JOBS.filter(function(j) {
+  var appliedHere = 0;
+  ALL_JOBS.forEach(function (j) { if (isApplied(j)) appliedHere++; });
+  $('appliedCount').textContent = nf(appliedHere);
+
+  FILTERED = ALL_JOBS.filter(function (j) {
+    if (!SHOW_APPLIED && isApplied(j)) return false;
     if (posted) { var a = ageDays(j); if (a === null || a >= Number(posted)) return false; }
     if (lang === 'no-req' && j.mandarin === 'Required') return false;
     if (lang === 'none' && j.mandarin) return false;
     if (onlyNew && !isNew(j)) return false;
-    if (q && j.title.toLowerCase().indexOf(q)===-1 && j.company.toLowerCase().indexOf(q)===-1) return false;
-    if (sen && j.seniority!==sen) return false;
-    if (wm && j.work_mode!==wm) return false;
-    if (src && j.source!==src) return false;
+    if (q && String(j.title || '').toLowerCase().indexOf(q) === -1 && String(j.company || '').toLowerCase().indexOf(q) === -1) return false;
+    if (sen && j.seniority !== sen) return false;
+    if (wm && j.work_mode !== wm) return false;
+    if (src && j.source !== src) return false;
     if (ttps && !j.ttps) return false;
     return true;
   });
 
-  FILTERED.sort(function(a,b) {
-    var va=a[SORT_KEY]||'', vb=b[SORT_KEY]||'';
-    if (SORT_KEY==='date') {
+  FILTERED.sort(function (a, b) {
+    var va = a[SORT_KEY], vb = b[SORT_KEY];
+    if (SORT_KEY === 'date') {
+      va = va || ''; vb = vb || '';
       // undated always last; same day -> better category fit first
-      if (!va || !vb) return (vb?1:0) - (va?1:0);
-      if (va!==vb) return SORT_ASC?va.localeCompare(vb):vb.localeCompare(va);
-      return (b.relevance||0)-(a.relevance||0) || (b.match||0)-(a.match||0);
+      if (!va || !vb) return (vb ? 1 : 0) - (va ? 1 : 0);
+      if (va !== vb) return SORT_ASC ? va.localeCompare(vb) : vb.localeCompare(va);
+      return (b.relevance || 0) - (a.relevance || 0) || (b.match || 0) - (a.match || 0);
     }
-    if (typeof va==='number'&&typeof vb==='number') return SORT_ASC?va-vb:vb-va;
-    return SORT_ASC?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
+    if (SORT_KEY === 'seniority') { va = LEVEL_RANK[va] || 0; vb = LEVEL_RANK[vb] || 0; }
+    if (SORT_KEY === 'salary_num' || SORT_KEY === 'match') { va = Number(va) || 0; vb = Number(vb) || 0; }
+    if (typeof va === 'number' && typeof vb === 'number') return SORT_ASC ? va - vb : vb - va;
+    va = String(va || '').toLowerCase(); vb = String(vb || '').toLowerCase();
+    if (!va || !vb) return (vb ? 1 : 0) - (va ? 1 : 0);
+    return SORT_ASC ? va.localeCompare(vb) : vb.localeCompare(va);
   });
 
+  if (!keepPage) PAGE = 1;
   renderTable();
 }
-
-var VIEW_MODE = 'table'; // 'table' or 'cards'
 
 function renderTable() {
-  var start = (PAGE-1)*PER_PAGE;
-  var page = FILTERED.slice(start, start+PER_PAGE);
-  var totalPages = Math.max(1, Math.ceil(FILTERED.length/PER_PAGE));
+  var total = FILTERED.length;
+  var totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  if (PAGE > totalPages) PAGE = totalPages;
+  var start = (PAGE - 1) * PER_PAGE;
+  var page = FILTERED.slice(start, start + PER_PAGE);
+  var parts = page.map(jobParts);
 
-  // Table view
-  document.getElementById('jobTableBody').innerHTML = page.map(function(j) {
-    var mc = j.match>=50?'#f97316':j.match>=25?'#ea580c':'#333';
-    var fitClass = (j.relevance||0)>=60?'fit-high':(j.relevance||0)>=30?'fit-med':'fit-low';
-    var fitTip = (j.relevance||0)>=60?'Strong category fit':'Partial match';
-    var salHtml = salaryHtml(j);
-    var ttpsB = j.ttps?'<span class="badge badge-ttps ml-1">TTPS</span>':'';
-    var srcLabel = {linkedin:'LinkedIn',indeed:'Indeed',google:'Google',jobsdb:'JobsDB',lever:'Lever',greenhouse:'Greenhouse'}[j.source]||j.source;
-    return '<tr class="job-row border-b border-neutral-800/30">'
-      +'<td class="py-3 pr-2 text-center" title="'+fitTip+'"><span class="fit-dot '+fitClass+'"></span></td>'
-      +'<td class="py-3 pr-3"><div class="flex items-center gap-2"><span class="text-xs text-neutral-400 w-7 text-right font-medium">'+(Number(j.match)||0)+'%</span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+(Number(j.match)||0)+'%;background:'+mc+'"></div></div></div></td>'
-      +'<td class="py-3 pr-3"><a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-neutral-200 hover:text-orange-400 font-medium text-sm transition">'+esc(j.title)+'</a>'+ttpsB+langBadge(j)+'</td>'
-      +'<td class="py-3 pr-3 text-neutral-400 text-sm">'+esc(j.company)+'</td>'
-      +'<td class="py-3 pr-3 text-sm">'+salHtml+'</td>'
-      +'<td class="py-3 pr-3 text-xs text-neutral-500">'+esc(j.seniority||'')+'</td>'
-      +'<td class="py-3 pr-3">'+wmPill(j.work_mode)+'</td>'
-      +'<td class="py-3 pr-3 text-xs whitespace-nowrap">'+postedHtml(j)+'</td>'
-      +'<td class="py-3"><span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></td>'
-      +'</tr>';
+  $('jobTableBody').innerHTML = parts.map(function (p) {
+    return '<tr class="align-top hover:bg-paper transition-colors' + (p.applied ? ' bg-well' : '') + '">'
+      + '<td class="pl-4 pr-3 py-3 whitespace-nowrap">' + p.posted + '</td>'
+      + '<td class="px-3 py-3 min-w-[15rem] leading-snug"><div>' + p.titleLink + '</div>'
+      +   ((p.chinese || p.ttps) ? '<div class="mt-1 flex flex-wrap gap-1">' + p.chinese + p.ttps + '</div>' : '') + '</td>'
+      + '<td class="px-3 py-3 min-w-[9rem] max-w-[14rem] text-ink-2 leading-snug">' + p.company + '</td>'
+      + '<td class="px-3 py-3 text-right num whitespace-nowrap">' + p.salHtml + '</td>'
+      + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.level + '</td>'
+      + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.mode + '</td>'
+      + '<td class="px-3 py-3 text-right num text-ink">' + p.match + '</td>'
+      + '<td class="px-3 py-3 text-ink-3 whitespace-nowrap">' + p.source + '</td>'
+      + '<td class="pl-3 pr-4 py-2.5 text-right">' + p.appliedBtn + '</td>'
+      + '</tr>';
   }).join('');
 
-  // Card view
-  document.getElementById('cardView').innerHTML = page.map(function(j) {
-    var mc = j.match>=50?'#f97316':j.match>=25?'#ea580c':'#333';
-    var ttpsB = j.ttps?'<span class="badge badge-ttps">TTPS</span>':'';
-    var srcLabel = {linkedin:'LinkedIn',indeed:'Indeed',google:'Google',jobsdb:'JobsDB',lever:'Lever',greenhouse:'Greenhouse'}[j.source]||j.source;
-    var fitClass = (j.relevance||0)>=60?'fit-high':(j.relevance||0)>=30?'fit-med':'fit-low';
-    return '<div class="glass job-card p-4">'
-      // Row 1: Title + salary
-      +'<div class="flex items-start justify-between gap-3 mb-1">'
-      +'<a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-white hover:text-orange-400 transition leading-snug flex-1 min-w-0">'+esc(j.title)+'</a>'
-      +'<div class="text-right shrink-0">'+salaryHtml(j)+'</div></div>'
-      // Row 2: Company
-      +'<div class="text-xs text-neutral-400 mb-2.5">'+esc(j.company)+'</div>'
-      // Row 3: Match bar
-      +'<div class="flex items-center gap-2 mb-2.5"><span class="fit-dot '+fitClass+'"></span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+(Number(j.match)||0)+'%;background:'+mc+'"></div></div>'
-      +'<span class="text-xs text-neutral-400 font-medium w-8 text-right">'+(Number(j.match)||0)+'%</span></div>'
-      // Row 4: Metadata pills + Apply
-      +'<div class="flex items-center justify-between">'
-      +'<div class="flex flex-wrap items-center gap-1.5">'
-      +wmPill(j.work_mode)
-      +(j.seniority?'<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-neutral-800 text-neutral-400 border border-neutral-700/50">'+esc(j.seniority)+'</span>':'')
-      +ttpsB+langBadge(j)
-      +'<span class="text-[11px]">'+postedHtml(j)+'</span>'
-      +'<span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></div>'
-      +(j.url?'<a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-xs text-orange-400 hover:text-orange-300 font-semibold transition whitespace-nowrap">Apply &rarr;</a>':'')
-      +'</div></div>';
+  var sep = '<span aria-hidden="true" class="text-rule-strong px-1">|</span>';
+  $('jobCards').innerHTML = parts.map(function (p) {
+    var meta = [p.level, p.mode, p.source, '<span class="num">Match ' + p.match + '</span>'].filter(Boolean).join(sep);
+    return '<li class="px-4 py-4' + (p.applied ? ' bg-well' : '') + '">'
+      + '<p class="text-sm text-ink-2">' + p.posted + '</p>'
+      + '<p class="mt-1 text-[0.9375rem] leading-snug">' + p.titleLink + '</p>'
+      + '<p class="text-sm text-ink-2 mt-0.5">' + p.company + '</p>'
+      + '<p class="text-sm mt-2 num">' + p.salHtml + '</p>'
+      + ((p.chinese || p.ttps) ? '<div class="flex flex-wrap gap-1.5 mt-2">' + p.chinese + p.ttps + '</div>' : '')
+      + '<p class="text-sm text-ink-2 mt-2">' + meta + '</p>'
+      + '<div class="flex items-center justify-between gap-3 mt-3">' + p.appliedBtn
+      +   (p.url !== '#' ? '<a href="' + p.url + '" target="_blank" rel="noopener noreferrer" class="px-2 py-1.5 -mr-2 text-sm font-semibold text-accent-ink underline underline-offset-4 decoration-[#F2B48A]">Open ad<span class="sr-only">: ' + p.title + '</span></a>' : '')
+      + '</div></li>';
   }).join('');
 
-  // Show correct view — mobile always shows cards via CSS (md:hidden / hidden md:block)
-  // View toggle only affects desktop
-  var isMobile = window.innerWidth < 768;
-  if (isMobile) {
-    document.getElementById('cardView').style.display = '';
-    document.getElementById('tableView').style.display = 'none';
-  } else {
-    document.getElementById('tableView').style.display = VIEW_MODE==='table'?'':'none';
-    document.getElementById('cardView').style.display = VIEW_MODE==='cards'?'':'none';
-  }
-
-  var showing = FILTERED.length>0?(start+1)+'-'+Math.min(start+PER_PAGE,FILTERED.length):'0';
-  document.getElementById('tableInfo').textContent = showing+' of '+FILTERED.length+' jobs';
-  document.getElementById('pageInfo').textContent = PAGE+'/'+totalPages;
-}
-
-function switchView(mode) {
-  VIEW_MODE = mode;
-  document.getElementById('viewTable').classList.toggle('active', mode==='table');
-  document.getElementById('viewCards').classList.toggle('active', mode==='cards');
-  renderTable();
+  $('jobsEmpty').classList.toggle('hidden', total > 0);
+  $('tableWrap').classList.toggle('md:block', total > 0);
+  var showing = total > 0 ? nf(start + 1) + ' to ' + nf(Math.min(start + PER_PAGE, total)) + ' of ' + nf(total) + ' jobs' : '0 jobs';
+  $('tableInfo').textContent = showing;
+  $('filterSummary').textContent = nf(total) + ' of ' + nf(ALL_JOBS.length) + ' match the filters';
+  $('jumpCount').textContent = nf(total);
+  $('pageInfo').textContent = 'Page ' + PAGE + ' of ' + totalPages;
+  $('prevPageBtn').disabled = PAGE <= 1;
+  $('nextPageBtn').disabled = PAGE >= totalPages;
 }
 
 function sortTable(key) {
-  document.querySelectorAll('.sort-arrow').forEach(function(el){el.textContent='';});
-  if (SORT_KEY===key){SORT_ASC=!SORT_ASC;}else{SORT_KEY=key;SORT_ASC=false;}
-  var a = document.querySelector('th[data-sort="'+key+'"] .sort-arrow');
-  if (a) a.textContent = SORT_ASC?' ↑':' ↓';
-  PAGE=1; applyFilters();
-}
-
-// Hong Kong calendar date (UTC+8, no DST) as YYYY-MM-DD
-function hkDate(d){ return new Date(d.getTime() + 8*3600e3).toISOString().slice(0,10); }
-function ageDays(j){
-  if (!j.date) return null;
-  return Math.max(0, Math.round((Date.parse(TODAY_HK) - Date.parse(j.date)) / 86400e3));
-}
-function isNew(j){ return !!j.first_seen && j.first_seen >= LATEST_RUN; }
-function postedHtml(j){
-  var a = ageDays(j), txt;
-  if (a === null) txt = '<span class="text-neutral-600">date unknown</span>';
-  else if (a === 0) txt = '<span class="text-emerald-400 font-medium">today</span>';
-  else if (a === 1) txt = '<span class="text-emerald-400">1d ago</span>';
-  else txt = '<span class="'+(a<=7?'text-neutral-300':'text-neutral-500')+'">'+a+'d ago</span>';
-  return txt + (isNew(j) ? ' <span class="badge badge-new">NEW</span>' : '');
-}
-function langBadge(j){
-  if (j.mandarin === 'Required') return '<span class="badge badge-lang ml-1" title="The ad requires Chinese (Cantonese or Mandarin)">Chinese req</span>';
-  if (j.mandarin === 'Preferred') return '<span class="badge badge-lang-soft ml-1" title="Chinese preferred, not required">Chinese pref</span>';
-  return '';
-}
-
-function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
-// For href attributes: esc() leaves quotes intact, and scraped URLs must not be
-// able to break out of the attribute or use javascript:/data: schemes.
-function safeUrl(u){
-  u=String(u||'').trim();
-  if(!/^https?:\/\//i.test(u)) return '#';
-  return u.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function wmPill(mode) {
-  if (mode==='Remote') return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold wm-remote">Remote</span>';
-  if (mode==='Hybrid') return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold wm-hybrid">Hybrid</span>';
-  if (mode==='On-site') return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold wm-onsite">On-site</span>';
-  return '<span class="text-neutral-700 text-[11px]">&mdash;</span>';
-}
-
-function salaryHtml(j) {
-  // Real salary from listing
-  if (j.salary_num > 0 && !j.salary_est) {
-    return '<span class="salary-real">'+esc(j.salary)+'</span>';
-  }
-  // Estimated salary
-  if (j.salary_est) {
-    var tip = 'Estimated (' + (j.salary_confidence||'') + ' confidence): ' + (j.salary_basis||'');
-    var conf = j.salary_confidence==='High'?'text-neutral-300':'text-neutral-400';
-    return '<span class="salary-est '+conf+'" title="'+esc(tip)+'">'+esc(j.salary)+' <span class="text-[9px] align-top opacity-50">est</span></span>';
-  }
-  return '<span class="salary-none">Not disclosed</span>';
-}
-
-function downloadExcel() {
-  var rows = FILTERED.map(function(j){
-    return {Posted:j.date||'','First seen':j.first_seen||'',Chinese:j.mandarin||'',
-      'Match%':j.match,Title:j.title,Company:j.company,Salary:j.salary,
-      Seniority:j.seniority||'','Work Mode':j.work_mode||'',TTPS:j.ttps?'Yes':'No',
-      Skills:(j.skills||[]).join(', '),Source:j.source,URL:j.url};
+  if (SORT_KEY === key) SORT_ASC = !SORT_ASC;
+  else { SORT_KEY = key; SORT_ASC = !!TEXT_KEYS[key]; }
+  document.querySelectorAll('th[data-sort]').forEach(function (th) {
+    var on = th.getAttribute('data-sort') === SORT_KEY;
+    th.setAttribute('aria-sort', on ? (SORT_ASC ? 'ascending' : 'descending') : 'none');
+    var arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = on ? (SORT_ASC ? '▲' : '▼') : '';
   });
-  var ws=XLSX.utils.json_to_sheet(rows);var wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'HK Jobs');
-  XLSX.writeFile(wb,'hk_jobs_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  applyFilters();
+}
+
+function changePage(delta) {
+  var totalPages = Math.max(1, Math.ceil(FILTERED.length / PER_PAGE));
+  var p = PAGE + delta;
+  if (p < 1 || p > totalPages) return;
+  PAGE = p;
+  renderTable();
+  $('jobs').scrollIntoView({ behavior: REDUCED_MOTION ? 'auto' : 'smooth', block: 'start' });
+}
+
+// ==================================================================
+// EXCEL (SheetJS loaded only when someone exports)
+// ==================================================================
+var XLSX_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+var xlsxLoading = null;
+function loadXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!xlsxLoading) {
+    xlsxLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = XLSX_SRC; s.async = true;
+      s.onload = function () { window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX global missing')); };
+      s.onerror = function () { reject(new Error('XLSX script failed to load')); };
+      document.head.appendChild(s);
+    }).catch(function (e) { xlsxLoading = null; throw e; });
+  }
+  return xlsxLoading;
+}
+async function downloadExcel() {
+  var btn = $('downloadExcelBtn'), label = btn.querySelector('.btn-label'), original = label.textContent;
+  btn.disabled = true; label.textContent = 'Preparing…';
+  try {
+    await loadXlsx();
+    var rows = FILTERED.map(function (j) {
+      return {
+        Posted: j.date || '', 'First seen': j.first_seen || '', Chinese: j.mandarin || '',
+        'Match%': j.match, Title: j.title, Company: j.company, Salary: j.salary,
+        'Salary estimated': j.salary_est ? 'Yes' : 'No', Seniority: j.seniority || '',
+        'Work Mode': j.work_mode || '', TTPS: j.ttps ? 'Yes' : 'No', Applied: isApplied(j) ? 'Yes' : 'No',
+        Skills: (j.skills || []).join(', '), Source: j.source, URL: j.url
+      };
+    });
+    var ws = XLSX.utils.json_to_sheet(rows), wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'HK Jobs');
+    XLSX.writeFile(wb, 'hk_jobs_' + TODAY_HK + '.xlsx');
+    label.textContent = original;
+  } catch (e) {
+    label.textContent = 'Export failed, try again';
+    setTimeout(function () { label.textContent = original; }, 4000);
+  } finally { btn.disabled = false; }
 }
 
 // ==================================================================
 // EVENTS
 // ==================================================================
-document.getElementById('searchBtn').addEventListener('click',search);
-document.getElementById('searchInput').addEventListener('input',function(){PAGE=1;applyFilters();});
-var dSearch = document.getElementById('searchInputDesktop');
-if (dSearch) dSearch.addEventListener('input',function(){PAGE=1;applyFilters();});
-document.getElementById('seniorityFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
-document.getElementById('workModeFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
-document.getElementById('sourceFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
-document.getElementById('ttpsFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
-['postedFilter','langFilter','newFilter'].forEach(function(id){
-  document.getElementById(id).addEventListener('change',function(){PAGE=1;applyFilters();});
-});
-document.getElementById('prevPageBtn').addEventListener('click',function(){if(PAGE>1){PAGE--;renderTable();}});
-document.getElementById('nextPageBtn').addEventListener('click',function(){if(PAGE<Math.ceil(FILTERED.length/PER_PAGE)){PAGE++;renderTable();}});
-document.getElementById('downloadExcelBtn').addEventListener('click',downloadExcel);
-document.getElementById('viewTable').addEventListener('click',function(){switchView('table');});
-document.getElementById('viewCards').addEventListener('click',function(){switchView('cards');});
-document.querySelectorAll('th[data-sort]').forEach(function(th){th.addEventListener('click',function(){sortTable(th.getAttribute('data-sort'));});});
-document.getElementById('categorySelect').addEventListener('keydown',function(e){if(e.key==='Enter')search();});
+function wire() {
+  $('categoryForm').addEventListener('submit', function (e) { e.preventDefault(); if (JOBS.length) search(); });
+  $('searchInput').addEventListener('input', function () { applyFilters(); });
+  ['postedFilter', 'langFilter', 'newFilter', 'seniorityFilter', 'workModeFilter', 'sourceFilter', 'ttpsFilter'].forEach(function (id) {
+    $(id).addEventListener('change', function () { applyFilters(); });
+  });
+  $('showAppliedBtn').addEventListener('click', function () {
+    SHOW_APPLIED = !SHOW_APPLIED;
+    this.setAttribute('aria-pressed', String(SHOW_APPLIED));
+    applyFilters();
+  });
+  $('prevPageBtn').addEventListener('click', function () { changePage(-1); });
+  $('nextPageBtn').addEventListener('click', function () { changePage(1); });
+  $('downloadExcelBtn').addEventListener('click', downloadExcel);
+  document.querySelectorAll('[data-sort-btn]').forEach(function (b) {
+    b.addEventListener('click', function () { sortTable(b.getAttribute('data-sort-btn')); });
+  });
+  // One delegated handler for every Mark applied button (picks, rows, cards)
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('[data-applied]') : null;
+    if (b) toggleApplied(Number(b.getAttribute('data-applied')));
+  });
+}
 
-var initArrow=document.querySelector('th[data-sort="date"] .sort-arrow');
-if(initArrow) initArrow.textContent=' ↓';
-
-init();
+function boot() { wire(); init(); }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 </script>

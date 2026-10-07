@@ -1,56 +1,49 @@
 ---
-// Job listings: table on desktop, cards on mobile
-// View toggle only visible on desktop (mobile always shows cards)
+// Job list: cards on phones, table from md. Rows are rendered by renderTable() in index.astro.
+const th = 'bg-well px-3 py-3 font-medium border-b border-rule whitespace-nowrap';
+const cols = [
+  { key: 'date', label: 'Posted', cls: 'pl-4 rounded-tl-[10px]' },
+  { key: 'title', label: 'Role', cls: '' },
+  { key: 'company', label: 'Company', cls: '' },
+  { key: 'salary_num', label: 'Salary', cls: 'text-right' },
+  { key: 'seniority', label: 'Level', cls: '' },
+  { key: 'work_mode', label: 'Mode', cls: '' },
+  { key: 'match', label: 'Match', cls: 'text-right' },
+  { key: 'source', label: 'Source', cls: '' },
+];
 ---
 
-<!-- Table view (desktop only) -->
-<div id="tableView" class="hidden md:block glass p-4 mb-3">
-  <div class="overflow-x-auto">
+<div class="bg-surface border border-rule rounded-[10px] mb-10 md:mb-12">
+  <ul id="jobCards" role="list" class="md:hidden divide-y divide-rule"></ul>
+  <div id="tableWrap" class="hidden md:block overflow-x-auto">
     <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left text-neutral-500 text-[11px] uppercase tracking-wider border-b border-neutral-700/50">
-          <th class="pb-2 pr-2 w-8 cursor-pointer select-none text-center" data-sort="relevance" title="Category fit: green = strong match, yellow = partial">
-            <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 w-20 cursor-pointer select-none" data-sort="match" title="Skill match: alignment with your profile">
-            Match <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 cursor-pointer select-none" data-sort="title">
-            Title <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 cursor-pointer select-none" data-sort="company">
-            Company <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 w-32 cursor-pointer select-none" data-sort="salary_num" title="Estimated monthly salary in HKD">
-            Salary <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 w-16 cursor-pointer select-none" data-sort="seniority" title="Seniority level from job title">
-            Level <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 w-20 cursor-pointer select-none" data-sort="work_mode" title="Remote, Hybrid, or On-site">
-            Mode <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 pr-3 w-20 cursor-pointer select-none" data-sort="date" title="Posted date (Hong Kong). NEW = first seen in the latest run">
-            Posted <span class="sort-arrow text-neutral-600"></span>
-          </th>
-          <th class="pb-2 w-20" title="Job board source">Source</th>
+      <caption class="sr-only">Hong Kong job ads. Column headers sort the list.</caption>
+      <thead class="text-ink-2 select-none">
+        <tr class="text-left">
+          {cols.map((c) => (
+            <th scope="col" aria-sort={c.key === 'date' ? 'descending' : 'none'} data-sort={c.key} class={`${th} ${c.cls}`}>
+              <button type="button" class="th-btn" data-sort-btn={c.key}>
+                {c.label} <span class="text-[10px] text-ink-3 sort-arrow" aria-hidden="true">{c.key === 'date' ? '▼' : ''}</span>
+              </button>
+            </th>
+          ))}
+          <th scope="col" class={`${th} pr-4 rounded-tr-[10px]`}><span class="sr-only">Applied</span></th>
         </tr>
       </thead>
-      <tbody id="jobTableBody"></tbody>
+      <tbody id="jobTableBody" class="divide-y divide-rule"></tbody>
     </table>
   </div>
-</div>
-
-<!-- Card view (always on mobile, toggleable on desktop) -->
-<div id="cardView" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mb-3 md:hidden">
-</div>
-
-<!-- Pagination -->
-<div class="flex items-center justify-between mb-6 px-1">
-  <span id="tableInfo" class="text-xs text-neutral-500">0 jobs</span>
-  <div class="flex items-center gap-1.5">
-    <button id="prevPageBtn" class="page-btn">&larr; Prev</button>
-    <span id="pageInfo" class="px-3 text-xs text-neutral-400 font-medium">1/1</span>
-    <button id="nextPageBtn" class="page-btn">Next &rarr;</button>
+  <p id="jobsEmpty" class="hidden px-4 py-8 text-center text-sm text-ink-2">No jobs match these filters. Try a wider posted window or "Any language".</p>
+  <div class="px-4 py-3 border-t border-rule flex flex-col sm:flex-row items-center justify-between gap-3">
+    <p id="tableInfo" class="text-sm text-ink-2 num">0 jobs</p>
+    <div class="flex items-center gap-2">
+      <button type="button" id="prevPageBtn" class="btn h-9 px-3 rounded-lg border border-rule-strong text-sm font-medium text-ink hover:bg-well disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
+      <span id="pageInfo" class="text-sm text-ink-2 num px-1">Page 1 of 1</span>
+      <button type="button" id="nextPageBtn" class="btn h-9 px-3 rounded-lg border border-rule-strong text-sm font-medium text-ink hover:bg-well disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+    </div>
+    <button id="downloadExcelBtn" type="button" class="btn inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-ink text-ink text-sm font-medium hover:bg-ink hover:text-paper disabled:opacity-60 disabled:cursor-wait">
+      <svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 5v14m0 0l-4-4m4 4l4-4M4 19h16"/></svg>
+      <span class="btn-label">Download Excel</span>
+    </button>
   </div>
 </div>

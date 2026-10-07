@@ -1,48 +1,30 @@
 ---
-// Collapsible methodology — transparent about data sources and estimation
+// How the data is made. Short and honest.
+const row = 'py-2.5 pr-6 text-left align-top font-medium text-ink whitespace-nowrap';
 ---
 
-<div class="glass mb-4">
-  <button id="methodToggle" class="w-full flex items-center justify-between p-4 text-left">
-    <span class="text-sm font-semibold text-white">Methodology &amp; Data Sources</span>
-    <svg id="methodArrow" class="collapse-arrow w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-    </svg>
-  </button>
-  <div id="methodContent" class="hidden px-4 pb-4 text-xs text-neutral-400 space-y-2">
-    <p><strong class="text-neutral-300">Data sources:</strong>
-    <strong class="text-neutral-300">LinkedIn</strong>, <strong class="text-neutral-300">Indeed</strong>,
-    <strong class="text-neutral-300">Google Jobs</strong> (via JobSpy),
-    <strong class="text-neutral-300">JobsDB</strong> (GraphQL API),
-    <strong class="text-neutral-300">Lever</strong> and <strong class="text-neutral-300">Greenhouse</strong> (ATS APIs for Binance, OKX, Agoda, Animoca, and others).
-    Refreshed daily via GitHub Actions. All data is publicly available job postings.</p>
-
-    <p><strong class="text-neutral-300">Salary estimation:</strong>
-    Most HK employers do not publish salary. Estimates are calibrated from
-    <a href="https://hk.jobsdb.com/career-advice/role/data-analyst/salary" target="_blank" rel="noopener" class="text-orange-500 hover:text-orange-400">JobsDB salary medians (March 2026)</a>,
-    <a href="https://fastlanehr.hk/average-salary-in-hong-kong/" target="_blank" rel="noopener" class="text-orange-500 hover:text-orange-400">FastLane HR benchmarks</a>, and
-    <a href="https://www.roberthalf.com/hk/en/insights/salary-guide" target="_blank" rel="noopener" class="text-orange-500 hover:text-orange-400">Robert Half 2026 HK Salary Guide</a>.
-    The model uses 5 signals: seniority level, company tier, role category, TTPS status, and premium skill keywords.
-    Confidence is rated High (3+ signals), Medium (1&ndash;2), or Low (baseline only).</p>
-
-    <p><strong class="text-neutral-300">Fit score:</strong> Measures how well a job title matches the selected category (e.g., selecting "Fintech" ranks fintech/crypto/blockchain titles higher).</p>
-
-    <p><strong class="text-neutral-300">Match score:</strong> Measures alignment with a specific skill profile: Power BI, SQL, Python, fraud detection, technical SEO. Title keywords contribute up to 25 points, description skills up to 75.</p>
-
-    <p><strong class="text-neutral-300">TTPS-Friendly:</strong> Flags ~60 known international-hiring companies (HSBC, Deloitte, Binance, Google, etc.) plus jobs mentioning visa sponsorship, relocation support, or diverse/global teams.</p>
-
-    <p><strong class="text-neutral-300">Deduplication:</strong> 3-layer system &mdash; URL canonicalization, exact title+company matching, and fuzzy matching (70%+ title similarity) across all sources. Prevents the same job from appearing twice.</p>
-
-    <p><strong class="text-neutral-300">Tech stack:</strong> Python (async httpx, Pydantic, pandas), Astro.js + Tailwind CSS frontend, Chart.js visualizations, 134 unit tests (pytest), GitHub Actions CI/CD, Hostinger FTP deployment.</p>
-  </div>
-</div>
-
-<script is:inline>
-document.addEventListener('DOMContentLoaded', function() {
-  var t = document.getElementById('methodToggle');
-  if (t) t.addEventListener('click', function() {
-    document.getElementById('methodContent').classList.toggle('hidden');
-    document.getElementById('methodArrow').classList.toggle('open');
-  });
-});
-</script>
+<section class="border-t border-ink pt-5 mb-8" aria-label="Methodology">
+  <details id="methodology">
+    <summary class="cursor-pointer flex items-center justify-between gap-4 py-1 rounded">
+      <span class="font-serif text-xl md:text-[1.375rem] leading-snug text-ink">How is this data made?</span>
+      <span class="summary-mark text-2xl leading-none text-ink-2 font-light" aria-hidden="true">+</span>
+    </summary>
+    <div class="mt-4 max-w-3xl text-[0.9375rem] leading-relaxed text-ink-2 space-y-3">
+      <p>A Python script collects public job ads once a day, reads each one and keeps the fields that matter for deciding where to apply.</p>
+      <table class="w-full mt-2 text-sm border-collapse">
+        <tbody class="divide-y divide-rule border-y border-rule">
+          <tr><th scope="row" class={row}>Sources</th><td class="py-2.5">JobsDB (its search API, then the full ad), LinkedIn and Indeed via JobSpy, and the Lever and Greenhouse career sites of companies that hire in Hong Kong.</td></tr>
+          <tr><th scope="row" class={row}>Schedule</th><td class="py-2.5">Daily at about 14:45 Hong Kong time, on GitHub Actions.</td></tr>
+          <tr><th scope="row" class={row}>Freshness</th><td class="py-2.5">Posted dates are Hong Kong dates. Ads older than 45 days are dropped. "New" means the ad first appeared in the latest run.</td></tr>
+          <tr><th scope="row" class={row}>Chinese</th><td class="py-2.5">Read from the full ad text: "required" when the ad asks for Cantonese or Mandarin, "preferred" when it is a plus. Short snippets can miss it, so open the ad before applying.</td></tr>
+          <tr><th scope="row" class={row}>Salaries</th><td class="py-2.5">Most Hong Kong ads publish no salary. Those get an estimate (shown in grey with "est") from level, employer, role and skills, calibrated on JobsDB salary pages, FastLane HR and the Robert Half 2026 guide. Estimates never enter the key figures or the salary chart.</td></tr>
+          <tr><th scope="row" class={row}>Match</th><td class="py-2.5">How many of one profile's skills the ad asks for: Power BI, SQL, Python, Excel, reporting, fraud and risk, technical SEO, web and automation. It is not a judgement of the job.</td></tr>
+          <tr><th scope="row" class={row}>TTPS-friendly</th><td class="py-2.5">Employers known to hire internationally, plus ads that mention visa support or relocation.</td></tr>
+          <tr><th scope="row" class={row}>Duplicates</th><td class="py-2.5">Removed by URL, then by title and company, then by close title matches across sources.</td></tr>
+        </tbody>
+      </table>
+      <p><strong class="font-medium text-ink">Applied marks</strong> live only in this browser. Clearing site data removes them.</p>
+      <p class="text-sm text-ink-3">Last run: <span id="updateDate" class="num">not loaded yet</span></p>
+    </div>
+  </details>
+</section>

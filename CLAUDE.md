@@ -164,7 +164,7 @@ All in `.env` (gitignored) and GitHub Secrets:
   a posted date, so nobody could tell. Live IDs were ~95.1M on 2026-10-07.
 - **JobsDB** now uses keyword search (`sortmode=KeywordRelevance`, `dateRange=14`, 100 per
   query), keeps an ad only if every query word is in title + full text, and fetches the full
-  ad via GraphQL (3 concurrent, 0.3s, cap `MAX_DETAIL_FETCHES=1800`/run, falls back to the
+  ad via GraphQL (3 concurrent, 0.3s, cap `MAX_DETAIL_FETCHES=2500`/run, falls back to the
   teaser past the cap or after 5 straight RATE_LIMITED). ~500 fetches per 9 queries, no throttling.
 - `generate_data.py`: `clean_posted_date()` turns 0001-01-01 / future dates into unknown;
   ads older than `MAX_AGE_DAYS=45` are dropped (Lever/Greenhouse evergreen reqs from 2022).

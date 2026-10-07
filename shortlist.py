@@ -33,8 +33,12 @@ TRACKER = os.path.join(HERE, "resume", "outreach", "tracker.csv")
 HKT = timezone(timedelta(hours=8))
 
 # Categories where his interviews actually came from get a boost.
+# Data roles stay the main focus; web dev, AI agents and technical SEO widen the net.
 CORE = {"Data Analyst": 12, "Business Intelligence": 12, "Fraud & Risk Analyst": 10,
-        "Product Analyst": 6, "AI & Data Science": 4, "Data Engineer": 2}
+        "AI Agents & Automation": 8, "Technical SEO": 7, "Web Developer": 7,
+        "Product Analyst": 6, "Python & Automation": 5, "Full Stack Developer": 3,
+        "Data Engineer": 2}
+EXCLUDED_TITLES = re.compile(r"data scientist|research scientist", re.IGNORECASE)
 
 
 def norm(s):
@@ -122,6 +126,8 @@ def main():
             age = None
         if age is None or age > args.days:
             drop["too old / undated"] += 1; continue
+        if EXCLUDED_TITLES.search(j.get("title") or ""):
+            drop["level"] += 1; continue
         if j.get("mandarin") == "Required":
             drop["Chinese required"] += 1; continue
         level = j.get("seniority") or ""

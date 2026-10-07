@@ -36,6 +36,9 @@ HKT = timezone(timedelta(hours=8))
 # for years (2022 dates were live on the site); nobody applies to those in time.
 MAX_AGE_DAYS = 45
 
+# Roles he does not want, whatever category query surfaced them.
+EXCLUDED_TITLES = re.compile(r"data scientist|research scientist", re.IGNORECASE)
+
 # url -> first date this pipeline saw the job, carried over from the live site.
 # CI starts from an empty checkout every day, so without this every job would look
 # brand new every run and "new since yesterday" would be meaningless.
@@ -135,15 +138,15 @@ CATEGORIES = {
     # Tier 2 — Web dev + SEO
     "web-developer": {
         "label": "Web Developer",
-        "queries": ["web developer", "PHP developer", "WordPress developer"],
+        "queries": ["web developer", "PHP developer", "WordPress developer", "website developer"],
     },
     "full-stack-developer": {
         "label": "Full Stack Developer",
         "queries": ["full stack developer", "javascript developer", "frontend developer"],
     },
-    "seo-digital-marketing": {
-        "label": "SEO & Digital Marketing",
-        "queries": ["technical SEO", "SEO specialist", "SEO manager", "digital marketing analyst"],
+    "technical-seo": {
+        "label": "Technical SEO",
+        "queries": ["technical SEO", "SEO specialist", "SEO manager", "SEO executive"],
     },
 
     # Tier 3 — Emerging + adjacent
@@ -159,9 +162,11 @@ CATEGORIES = {
         "label": "Python & Automation",
         "queries": ["python developer", "python analyst", "process automation"],
     },
-    "ai-data-science": {
-        "label": "AI & Data Science",
-        "queries": ["data scientist", "machine learning analyst", "AI analyst"],
+    # Building AI agents and automations (Copilot Studio, Power Automate AI Builder,
+    # LLM tools), NOT data science: data-scientist titles are excluded outright.
+    "ai-agents": {
+        "label": "AI Agents & Automation",
+        "queries": ["AI engineer", "AI agent", "generative AI", "LLM", "AI automation"],
     },
     "fintech": {
         "label": "Fintech",
@@ -185,6 +190,8 @@ PROFILE_SKILLS = {
     "bi": 2, "kpi": 2, "html": 2, "css": 2,
     "aml": 2, "kyc": 2, "risk management": 2,
     "copilot": 2, "ai builder": 2, "data governance": 2, "data quality": 2,
+    "copilot studio": 3, "llm": 2, "generative ai": 2, "prompt engineering": 2,
+    "ai agent": 2, "chatbot": 1, "astro": 1,
     "stakeholder": 1, "reconciliation": 1,
 
     # Weight 1 — familiar / learning
@@ -211,7 +218,9 @@ def calc_skill_match(title: str, description: str, skills_found: list) -> int:
         "seo": 20, "technical seo": 25, "digital marketing": 15,
         "python": 15, "data engineer": 15, "product analyst": 15,
         "analytics": 15, "dashboard": 10, "automation": 10,
-        "fintech": 10, "data scientist": 15,
+        "fintech": 10,
+        "ai engineer": 20, "ai agent": 25, "agentic": 25, "llm": 15,
+        "generative ai": 20, "genai": 20, "copilot": 20, "ai automation": 25,
     }
 
     title_lower = str(title or "").lower()
@@ -373,11 +382,11 @@ CATEGORY_MULTIPLIER = {
     "Analytics Manager":      1.05,   # Management track
     "Web Developer":          0.95,   # PHP/WordPress slightly below market
     "Full Stack Developer":   1.10,   # JobsDB developer median HK$33,500
-    "SEO & Digital Marketing": 0.85,  # Marketing roles below tech
+    "Technical SEO":          0.90,   # SEO roles sit below core tech
     "Data Engineer":          1.15,   # Pipeline/infra skills premium
     "Product Analyst":        1.00,   # Similar to data analyst
     "Python & Automation":    1.05,   # Python premium
-    "AI & Data Science":      1.20,   # ML/AI commands highest premium
+    "AI Agents & Automation": 1.15,   # AI engineering premium
     "Fintech":                1.15,   # Finance + tech intersection
 }
 
@@ -528,11 +537,14 @@ CATEGORY_TITLE_KEYWORDS = {
     "Analytics Manager":      ["analytics manager", "head of analytics", "analytics lead", "analytics director"],
     "Web Developer":          ["web developer", "php developer", "wordpress", "frontend developer", "web engineer"],
     "Full Stack Developer":   ["full stack", "fullstack", "javascript developer", "frontend", "backend developer"],
-    "SEO & Digital Marketing": ["seo", "digital marketing", "search engine", "content marketing", "sem"],
+    "Technical SEO":          ["technical seo", "seo", "search engine optimi", "organic search"],
     "Data Engineer":          ["data engineer", "analytics engineer", "data pipeline", "etl", "data infrastructure"],
     "Product Analyst":        ["product analyst", "growth analyst", "insights analyst", "product data"],
     "Python & Automation":    ["python developer", "python engineer", "automation", "scripting", "python analyst"],
-    "AI & Data Science":      ["data scientist", "machine learning", "ai engineer", "ai analyst", "ml engineer", "nlp"],
+    "AI Agents & Automation": ["ai engineer", "ai agent", "agentic", "llm", "generative ai", "genai",
+                               "gen ai", "ai automation", "ai developer", "ai solution", "prompt",
+                               "copilot", "conversational ai", "chatbot", "ai specialist",
+                               "ai product", "ai transformation", "ai enablement", "automation"],
     "Fintech":                ["fintech", "blockchain", "crypto", "defi", "web3", "trading"],
 }
 
@@ -572,6 +584,8 @@ def build_json(listings, query_label, location):
     today = today_hk()
     kept = []
     for l in listings:
+        if EXCLUDED_TITLES.search(l.title or ""):
+            continue
         posted = clean_posted_date(l.posting_date, today)
         if posted and (today - posted).days > MAX_AGE_DAYS:
             continue

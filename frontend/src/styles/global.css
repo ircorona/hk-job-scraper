@@ -2,193 +2,93 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Paper and ink. Tokens mirror tailwind.config.mjs; Chart.js reads the same values (C in index.astro). */
+:root {
+  color-scheme: light;
+  --paper: #FAF8F5; --surface: #FFFFFF; --well: #F3EFE9; --rule: #E7E2DA; --rule-strong: #D6CFC4;
+  --ink: #1C1B19; --ink-2: #57534E; --ink-3: #716A64;
+  --accent: #FF6B00; --accent-ink: #C2410C; --accent-deep: #9A3412; --accent-tint: #FFF1E6;
+}
+
 @layer base {
+  html { -webkit-text-size-adjust: 100%; }
   body {
+    background: var(--paper);
+    color: var(--ink);
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background: #0a0a0a;
-    color: #e2e8f0;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  *, *::before, *::after {
-    border-color: rgba(255, 255, 255, 0.06);
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+  :focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; border-radius: 4px; }
+  select, input { color: var(--ink); background-color: var(--surface); }
+  select {
+    -webkit-appearance: none; appearance: none; padding-right: 2.25rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2357534E'%3E%3Cpath d='M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 0.625rem center; background-size: 1rem;
   }
+  input[type="checkbox"] { accent-color: var(--accent-ink); }
 }
 
 @layer components {
-  /* ── Glass card ────────────────────────────────────────── */
-  .glass {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 0.75rem;
-  }
+  .num { font-variant-numeric: tabular-nums; }
+  .btn { transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .1s ease; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
 
-  /* ── Stat cards ────────────────────────────────────────── */
-  .stat-card {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 0.75rem;
-    text-align: center;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 1px rgba(255, 255, 255, 0.05);
-    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  /* Form controls: one height, one border, darker on hover, ink on focus */
+  .field {
+    height: 2.75rem; border: 1px solid var(--rule-strong); border-radius: 8px;
+    padding: 0 0.75rem; font-size: 0.875rem; transition: border-color .15s ease;
   }
-  .stat-card:hover {
-    transform: translateY(-2px);
-    border-color: rgba(249, 115, 22, 0.35);
-    box-shadow: 0 4px 24px rgba(249, 115, 22, 0.07);
-  }
+  .field:hover { border-color: var(--ink-3); }
+  .field:focus { border-color: var(--ink); outline: none; }
+  .field:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
 
-  /* ── Match bar ─────────────────────────────────────────── */
-  .match-bar {
-    height: 8px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.06);
-    overflow: hidden;
+  /* Small toggle chips in the filter bar (checkbox inside a label, or a pressed button) */
+  .chip {
+    display: inline-flex; align-items: center; gap: .5rem; height: 2.75rem; padding: 0 .75rem;
+    border: 1px solid var(--rule-strong); border-radius: 8px; font-size: .875rem; color: var(--ink-2);
+    background: var(--surface); cursor: pointer; user-select: none; white-space: nowrap;
   }
-  .match-bar-fill {
-    height: 100%;
-    border-radius: 4px;
-    transition: width 0.3s;
-  }
+  .chip:hover { border-color: var(--ink-3); color: var(--ink); }
+  .chip:has(input:checked), .chip[aria-pressed="true"] { border-color: var(--ink); color: var(--ink); background: var(--well); }
+  .chip:has(input:focus-visible) { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
 
-  /* ── Fit indicator (dot) ───────────────────────────────── */
-  .fit-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
+  /* Mark applied: quiet text button, ink when done */
+  .applied-btn {
+    display: inline-flex; align-items: center; gap: .25rem; min-height: 2rem; padding: .25rem .5rem;
+    border: 1px solid var(--rule-strong); border-radius: 4px; font-size: .75rem; font-weight: 500;
+    color: var(--ink-2); background: var(--surface); white-space: nowrap;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease;
   }
-  .fit-high  { background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.4); }
-  .fit-med   { background: #eab308; box-shadow: 0 0 6px rgba(234, 179, 8, 0.3); }
-  .fit-low   { background: #333; }
+  .applied-btn:hover { border-color: var(--ink); color: var(--ink); }
+  .applied-btn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 
-  /* ── Source badges ──────────────────────────────────────── */
-  .badge {
-    font-size: 0.6rem;
-    padding: 2px 7px;
-    border-radius: 4px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-decoration: none;
-    display: inline-block;
-    line-height: 1.4;
-  }
-  .badge-linkedin    { background: #0a66c2; color: #fff; }
-  .badge-indeed      { background: #2557a7; color: #fff; }
-  .badge-google      { background: #34a853; color: #fff; }
-  .badge-jobsdb      { background: #e60278; color: #fff; }
-  .badge-lever       { background: #1eb47c; color: #fff; }
-  .badge-greenhouse  { background: #24a148; color: #fff; }
-  .badge-ttps        { background: #7c3aed; color: #fff; font-size: 0.55rem; }
-  .badge-new         { background: #16a34a; color: #fff; font-size: 0.55rem; }
-  .badge-lang        { background: #7f1d1d; color: #fecaca; font-size: 0.55rem; }
-  .badge-lang-soft   { background: #3f3f46; color: #d4d4d8; font-size: 0.55rem; }
+  .badge { display: inline-block; padding: .125rem .375rem; border-radius: 4px; font-size: .75rem; font-weight: 500; white-space: nowrap; line-height: 1.35; }
+  .badge-neutral { background: var(--well); color: var(--ink-2); }
+  .badge-warn { background: var(--accent-tint); color: var(--accent-deep); }
+  .badge-outline { border: 1px solid var(--rule-strong); color: var(--ink-2); }
 
-  /* ── Work mode pills ───────────────────────────────────── */
-  .wm-remote  { background: #065f46; color: #6ee7b7; border: 1px solid #047857; }
-  .wm-hybrid  { background: #1e3a5f; color: #93c5fd; border: 1px solid #1e40af; }
-  .wm-onsite  { background: #4a2600; color: #fdba74; border: 1px solid #9a3412; }
+  .th-btn { display: inline-flex; align-items: center; gap: .25rem; font: inherit; color: inherit; }
+  .th-btn:hover { color: var(--ink); }
 
-  /* ── Job rows & cards ──────────────────────────────────── */
-  .job-row { transition: background 0.1s; }
-  .job-row:hover { background: rgba(249, 115, 22, 0.06); }
-  .job-card {
-    transition: border-color 0.15s, box-shadow 0.15s;
-  }
-  .job-card:hover {
-    border-color: rgba(249, 115, 22, 0.25);
-    box-shadow: 0 2px 16px rgba(249, 115, 22, 0.06);
-  }
+  .skeleton { background: var(--well); border-radius: 10px; }
 
-  /* ── Chart container ───────────────────────────────────── */
-  .chart-box { position: relative; height: 260px; }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .summary-mark { transform: rotate(45deg); }
+  .summary-mark { transition: transform .15s ease; }
+}
 
-  /* ── Collapsible ───────────────────────────────────────── */
-  .collapse-arrow { transition: transform 0.2s; }
-  .collapse-arrow.open { transform: rotate(180deg); }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+  .skeleton { animation: pulse 1.6s ease-in-out infinite; }
+}
+@keyframes pulse { 50% { opacity: .55; } }
 
-  /* ── Inputs ────────────────────────────────────────────── */
-  .input {
-    background: rgba(255, 255, 255, 0.05);
-    color: #e2e8f0;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    transition: border-color 0.15s;
-  }
-  .input:focus {
-    border-color: #f97316;
-    outline: none;
-  }
-  select.input {
-    cursor: pointer;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 0.5rem center;
-    padding-right: 1.75rem;
-  }
-  select.input option {
-    background: #1a1a1a;
-    color: #e2e8f0;
-  }
-
-  /* ── Sticky filter bar ─────────────────────────────────── */
-  .filter-bar {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    background: rgba(10, 10, 10, 0.97);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  /* ── Salary display ────────────────────────────────────── */
-  .salary-real { color: #f97316; font-weight: 500; }
-  .salary-est {
-    color: #a3a3a3;
-    font-size: 0.8rem;
-    cursor: help;
-  }
-  .salary-none { color: #404040; font-style: italic; font-size: 0.75rem; }
-
-  /* ── View toggle ───────────────────────────────────────── */
-  .view-btn {
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    transition: all 0.15s;
-    border: 1px solid transparent;
-  }
-  .view-btn.active {
-    background: rgba(249, 115, 22, 0.15);
-    color: #f97316;
-    border-color: rgba(249, 115, 22, 0.3);
-  }
-  .view-btn:not(.active) {
-    color: #525252;
-  }
-  .view-btn:not(.active):hover {
-    color: #a3a3a3;
-  }
-
-  /* ── Pagination ────────────────────────────────────────── */
-  .page-btn {
-    padding: 6px 14px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #a3a3a3;
-    transition: all 0.15s;
-  }
-  .page-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: #e2e8f0;
-  }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

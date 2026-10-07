@@ -1,0 +1,17 @@
+---
+// "Apply first": up to 8 fresh, reachable picks across ALL categories, ranked in index.astro (rankPicks).
+---
+
+<section id="applyFirst" class="max-w-6xl mx-auto px-4 md:px-6 mb-10 md:mb-12" aria-labelledby="applyFirstTitle">
+  <div class="bg-surface border border-rule rounded-[10px]">
+    <div class="px-4 md:px-6 pt-5 md:pt-6 pb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-1 md:gap-6 border-b border-rule">
+      <div>
+        <h2 id="applyFirstTitle" class="font-serif text-2xl md:text-[1.75rem] leading-tight text-ink">Apply first</h2>
+        <p id="applyFirstSub" class="mt-1.5 text-sm text-ink-2">Posted in the last 4 days, no Chinese requirement, below manager level, ranked by fit with a data analyst profile.</p>
+      </div>
+      <p id="applyFirstCount" class="text-sm text-ink-3 num md:text-right shrink-0"></p>
+    </div>
+    <ol id="picksList" class="divide-y divide-rule" aria-describedby="applyFirstSub"></ol>
+    <p id="picksEmpty" class="hidden px-4 md:px-6 py-6 text-sm text-ink-2">Nothing new fits right now. Every fresh ad either needs Chinese, sits at manager level or is already marked applied.</p>
+  </div>
+</section>

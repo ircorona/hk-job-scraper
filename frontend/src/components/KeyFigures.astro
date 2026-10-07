@@ -1,0 +1,32 @@
+---
+// Key figures for the selected category. Independent of the table filters.
+---
+
+<section class="border-t border-ink pt-5 md:pt-6 mb-6 md:mb-12 grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8" aria-label="Key figures">
+  <div class="md:col-span-4">
+    <p class="text-sm font-medium text-ink-2">Posted this week</p>
+    <p id="figWeek" class="mt-2 font-serif text-[3.25rem] md:text-[3.75rem] leading-none text-accent-ink num">&nbsp;</p>
+    <p id="figWeekN" class="mt-2 text-sm text-ink-3 num"></p>
+  </div>
+  <dl class="md:col-span-8 grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5 md:border-l md:border-rule md:pl-8">
+    <div>
+      <dt class="text-sm text-ink-2">New today</dt>
+      <dd id="figNew" class="mt-1 text-[1.625rem] font-semibold leading-tight text-ink num">&nbsp;</dd>
+      <dd class="mt-1 text-xs text-ink-3 leading-snug">First seen in the latest run</dd>
+    </div>
+    <div>
+      <dt class="text-sm text-ink-2">No Chinese requirement</dt>
+      <dd id="figNoChinese" class="mt-1 text-[1.625rem] font-semibold leading-tight text-ink num">&nbsp;</dd>
+      <dd id="figNoChineseN" class="mt-1 text-xs text-ink-3 leading-snug num"></dd>
+    </div>
+    <div>
+      <dt class="text-sm text-ink-2">Median posted salary</dt>
+      <dd id="figSalary" class="mt-1 text-[1.625rem] font-semibold leading-tight text-ink num">&nbsp;</dd>
+      <dd id="figSalaryN" class="mt-1 text-xs text-ink-3 leading-snug num" title="Estimates are not counted"></dd>
+    </div>
+    <div>
+      <dt class="text-sm text-ink-2">Companies hiring</dt>
+      <dd id="figCompanies" class="mt-1 text-[1.625rem] font-semibold leading-tight text-ink num">&nbsp;</dd>
+    </div>
+  </dl>
+</section>

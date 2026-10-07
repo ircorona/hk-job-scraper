@@ -1,74 +1,65 @@
 ---
-// Sticky filter bar — responsive: stacks cleanly on mobile
+// Job list filters. Defaults: posted in the last 7 days, Chinese not required, applied jobs hidden.
+const sel = 'field w-full md:w-auto';
 ---
 
-<div class="filter-bar py-3 px-4 mb-3">
-  <div class="max-w-6xl mx-auto">
-    <!-- Search input (always full width on mobile) -->
-    <div class="flex gap-2 mb-2 sm:mb-0 sm:hidden">
-      <input type="text" id="searchInput" placeholder="Filter by title or company..."
-        class="input flex-1" title="Search by job title or company name" />
+<div id="jobs" class="mb-3" style="scroll-margin-top: 1rem;">
+  <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-1 mb-4">
+    <h2 class="font-serif text-2xl md:text-[1.75rem] leading-tight text-ink">Jobs</h2>
+    <p id="filterSummary" class="text-sm text-ink-3 num" aria-live="polite"></p>
+  </div>
+  <div class="flex flex-col gap-2 md:gap-3">
+    <div class="flex flex-col md:flex-row gap-2 md:gap-3">
+      <input id="searchInput" type="search" autocomplete="off" aria-label="Search by job title or company" placeholder="Search title or company"
+        class="field w-full md:flex-1 min-w-0 text-base" />
+      <div class="grid grid-cols-2 md:flex gap-2 md:gap-3">
+        <select id="postedFilter" aria-label="Posted within (Hong Kong date)" class={sel}>
+          <option value="1">Posted today</option>
+          <option value="3">Last 3 days</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="">Any date</option>
+        </select>
+        <select id="langFilter" aria-label="Chinese-language requirement" class={sel}>
+          <option value="no-req" selected>Chinese not required</option>
+          <option value="none">No Chinese mentioned</option>
+          <option value="">Any language</option>
+        </select>
+      </div>
     </div>
-    <!-- Desktop: all in one row -->
-    <div class="flex flex-wrap gap-2 items-center">
-      <input type="text" id="searchInputDesktop" placeholder="Filter by title or company..."
-        class="input flex-1 min-w-[160px] hidden sm:block" title="Search by job title or company name" />
-      <select id="postedFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Posted within (Hong Kong date)">
-        <option value="1">Posted: today</option>
-        <option value="3">Last 3 days</option>
-        <option value="7" selected>Last 7 days</option>
-        <option value="14">Last 14 days</option>
-        <option value="">Any date</option>
-      </select>
-      <select id="langFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Chinese-language requirement, read from the full job ad">
-        <option value="no-req" selected>Chinese not required</option>
-        <option value="none">No Chinese mentioned</option>
-        <option value="">Any language</option>
-      </select>
-      <label class="flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer select-none whitespace-nowrap w-[calc(50%-4px)] sm:w-auto">
-        <input type="checkbox" id="newFilter" class="accent-orange-500 w-3.5 h-3.5" />
-        <span title="Only jobs that appeared in the latest daily run">New today</span>
-      </label>
-      <select id="seniorityFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Filter by seniority level">
-        <option value="">All Levels</option>
+    <div class="grid grid-cols-2 md:flex md:flex-wrap gap-2 md:gap-3 items-center">
+      <select id="seniorityFilter" aria-label="Level" class={sel}>
+        <option value="">All levels</option>
         <option value="Junior">Junior</option>
         <option value="Mid">Mid</option>
         <option value="Senior">Senior</option>
         <option value="Manager">Manager</option>
         <option value="Director+">Director+</option>
       </select>
-      <select id="workModeFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Filter by work arrangement">
-        <option value="">All Modes</option>
+      <select id="workModeFilter" aria-label="Work mode" class={sel}>
+        <option value="">All work modes</option>
         <option value="Remote">Remote</option>
         <option value="Hybrid">Hybrid</option>
         <option value="On-site">On-site</option>
       </select>
-      <select id="sourceFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Filter by job board source">
-        <option value="">All Sources</option>
+      <select id="sourceFilter" aria-label="Source" class={sel}>
+        <option value="">All sources</option>
+        <option value="jobsdb">JobsDB</option>
         <option value="linkedin">LinkedIn</option>
         <option value="indeed">Indeed</option>
-        <option value="google">Google</option>
-        <option value="jobsdb">JobsDB</option>
         <option value="lever">Lever</option>
         <option value="greenhouse">Greenhouse</option>
+        <option value="google">Google Jobs</option>
       </select>
-      <label class="flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer select-none whitespace-nowrap w-[calc(50%-4px)] sm:w-auto">
-        <input type="checkbox" id="ttpsFilter" class="accent-purple-500 w-3.5 h-3.5" />
-        <span title="Show only TTPS-friendly companies">TTPS only</span>
+      <label class="chip" title="Only jobs that appeared in the latest daily run">
+        <input type="checkbox" id="newFilter" class="w-4 h-4" />
+        <span>New today</span>
       </label>
-      <div class="hidden sm:flex items-center gap-1 ml-auto">
-        <button id="viewTable" class="view-btn active" title="Table view">
-          <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
-        </button>
-        <button id="viewCards" class="view-btn" title="Card view">
-          <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path></svg>
-        </button>
-        <button id="downloadExcelBtn"
-          class="view-btn flex items-center gap-1 text-emerald-500 hover:text-emerald-400" title="Export to Excel">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-          XLSX
-        </button>
-      </div>
+      <label class="chip" title="Employers known to hire internationally, or ads that mention visa support">
+        <input type="checkbox" id="ttpsFilter" class="w-4 h-4" />
+        <span>TTPS-friendly only</span>
+      </label>
+      <button type="button" id="showAppliedBtn" class="chip" aria-pressed="false">Show applied (<span id="appliedCount" class="num">0</span>)</button>
     </div>
   </div>
 </div>

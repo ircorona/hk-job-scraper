@@ -44,6 +44,18 @@ def test_old_ads_are_dropped_and_undated_kept(monkeypatch):
     assert data["stats"]["total_jobs"] == 2
 
 
+def test_data_scientist_roles_are_excluded(monkeypatch):
+    """He targets AI agents and automation, not data science (2026-10-07)."""
+    monkeypatch.setattr(gd, "today_hk", lambda: TODAY)
+    monkeypatch.setattr(gd, "FIRST_SEEN", {})
+    ds = _listing("https://x/ds", date(2026, 10, 6))
+    ds.title = "Senior Data Scientist"
+    agent = _listing("https://x/agent", date(2026, 10, 6))
+    agent.title = "AI Agent Engineer"
+    data = gd.build_json([ds, agent], "AI Agents & Automation", "Hong Kong")
+    assert [j["url"] for j in data["jobs"]] == ["https://x/agent"]
+
+
 def test_first_seen_is_carried_over(monkeypatch):
     monkeypatch.setattr(gd, "today_hk", lambda: TODAY)
     monkeypatch.setattr(gd, "FIRST_SEEN", {"https://x/old": "2026-10-01"})

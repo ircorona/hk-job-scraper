@@ -57,7 +57,7 @@ PAGE_SIZE = 100
 # Full-ad fetches per run. ~36 queries x 100 results dedupe to roughly 1,000-1,500
 # unique ads. Past the budget we fall back to teaser + bullet points rather than
 # hammer the GraphQL endpoint into RATE_LIMITED.
-MAX_DETAIL_FETCHES = 1800
+MAX_DETAIL_FETCHES = 2500
 DETAIL_CONCURRENCY = 3
 DETAIL_DELAY = 0.3
 
