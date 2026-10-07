@@ -263,7 +263,9 @@ function rankPicks() {
     if (j.mandarin === 'Required') return;
     if (j.seniority === 'Director+' || j.seniority === 'Manager') return;
     if (isApplied(j)) return;
-    if (/data scientist|research scientist/i.test(j.title || '')) return;
+    // Data science and data engineering stay out of the picks: DE is ~10% of applications
+    // by choice (degree + Spark/Databricks gaps), browse it in the Data Engineer category.
+    if (/data scientist|research scientist|data engineer|data engineering|data platform|etl developer/i.test(j.title || '')) return;
     var boost = 0;
     j._cats.forEach(function (c) { boost = Math.max(boost, CAT_BOOST[c] || 0); });
     var score = (j._relMax || 0) * 0.5 + (Number(j.match) || 0) * 0.4 + boost + (AGE_BONUS[a] || 0)

@@ -38,7 +38,11 @@ CORE = {"Data Analyst": 12, "Business Intelligence": 12, "Fraud & Risk Analyst":
         "AI Agents & Automation": 8, "Technical SEO": 7, "Web Developer": 7,
         "Product Analyst": 6, "Python & Automation": 5, "Full Stack Developer": 3,
         "Data Engineer": 2}
-EXCLUDED_TITLES = re.compile(r"data scientist|research scientist", re.IGNORECASE)
+# Data engineering is ~10% of applications by choice (2026-10-08): browse it in the
+# Data Engineer category, never let it crowd the daily top picks.
+EXCLUDED_TITLES = re.compile(
+    r"data scientist|research scientist|data engineer|data engineering|data platform|etl developer",
+    re.IGNORECASE)
 
 
 def norm(s):
