@@ -332,13 +332,13 @@ function renderTable() {
     var srcLabel = {linkedin:'LinkedIn',indeed:'Indeed',google:'Google',jobsdb:'JobsDB',lever:'Lever',greenhouse:'Greenhouse'}[j.source]||j.source;
     return '<tr class="job-row border-b border-neutral-800/30">'
       +'<td class="py-3 pr-2 text-center" title="'+fitTip+'"><span class="fit-dot '+fitClass+'"></span></td>'
-      +'<td class="py-3 pr-3"><div class="flex items-center gap-2"><span class="text-xs text-neutral-400 w-7 text-right font-medium">'+j.match+'%</span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+j.match+'%;background:'+mc+'"></div></div></div></td>'
-      +'<td class="py-3 pr-3"><a href="'+(j.url||'#')+'" target="_blank" rel="noopener" class="text-neutral-200 hover:text-orange-400 font-medium text-sm transition">'+esc(j.title)+'</a>'+ttpsB+'</td>'
+      +'<td class="py-3 pr-3"><div class="flex items-center gap-2"><span class="text-xs text-neutral-400 w-7 text-right font-medium">'+(Number(j.match)||0)+'%</span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+(Number(j.match)||0)+'%;background:'+mc+'"></div></div></div></td>'
+      +'<td class="py-3 pr-3"><a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-neutral-200 hover:text-orange-400 font-medium text-sm transition">'+esc(j.title)+'</a>'+ttpsB+'</td>'
       +'<td class="py-3 pr-3 text-neutral-400 text-sm">'+esc(j.company)+'</td>'
       +'<td class="py-3 pr-3 text-sm">'+salHtml+'</td>'
       +'<td class="py-3 pr-3 text-xs text-neutral-500">'+esc(j.seniority||'')+'</td>'
       +'<td class="py-3 pr-3">'+wmPill(j.work_mode)+'</td>'
-      +'<td class="py-3"><span class="badge badge-'+j.source+'">'+srcLabel+'</span></td>'
+      +'<td class="py-3"><span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></td>'
       +'</tr>';
   }).join('');
 
@@ -351,21 +351,21 @@ function renderTable() {
     return '<div class="glass job-card p-4">'
       // Row 1: Title + salary
       +'<div class="flex items-start justify-between gap-3 mb-1">'
-      +'<a href="'+(j.url||'#')+'" target="_blank" rel="noopener" class="text-sm font-semibold text-white hover:text-orange-400 transition leading-snug flex-1 min-w-0">'+esc(j.title)+'</a>'
+      +'<a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-white hover:text-orange-400 transition leading-snug flex-1 min-w-0">'+esc(j.title)+'</a>'
       +'<div class="text-right shrink-0">'+salaryHtml(j)+'</div></div>'
       // Row 2: Company
       +'<div class="text-xs text-neutral-400 mb-2.5">'+esc(j.company)+'</div>'
       // Row 3: Match bar
-      +'<div class="flex items-center gap-2 mb-2.5"><span class="fit-dot '+fitClass+'"></span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+j.match+'%;background:'+mc+'"></div></div>'
-      +'<span class="text-xs text-neutral-400 font-medium w-8 text-right">'+j.match+'%</span></div>'
+      +'<div class="flex items-center gap-2 mb-2.5"><span class="fit-dot '+fitClass+'"></span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+(Number(j.match)||0)+'%;background:'+mc+'"></div></div>'
+      +'<span class="text-xs text-neutral-400 font-medium w-8 text-right">'+(Number(j.match)||0)+'%</span></div>'
       // Row 4: Metadata pills + Apply
       +'<div class="flex items-center justify-between">'
       +'<div class="flex flex-wrap items-center gap-1.5">'
       +wmPill(j.work_mode)
       +(j.seniority?'<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-neutral-800 text-neutral-400 border border-neutral-700/50">'+esc(j.seniority)+'</span>':'')
       +ttpsB
-      +'<span class="badge badge-'+j.source+'">'+srcLabel+'</span></div>'
-      +(j.url?'<a href="'+esc(j.url)+'" target="_blank" rel="noopener" class="text-xs text-orange-400 hover:text-orange-300 font-semibold transition whitespace-nowrap">Apply &rarr;</a>':'')
+      +'<span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></div>'
+      +(j.url?'<a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-xs text-orange-400 hover:text-orange-300 font-semibold transition whitespace-nowrap">Apply &rarr;</a>':'')
       +'</div></div>';
   }).join('');
 
@@ -401,6 +401,13 @@ function sortTable(key) {
 }
 
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
+// For href attributes: esc() leaves quotes intact, and scraped URLs must not be
+// able to break out of the attribute or use javascript:/data: schemes.
+function safeUrl(u){
+  u=String(u||'').trim();
+  if(!/^https?:\/\//i.test(u)) return '#';
+  return u.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 
 function wmPill(mode) {
   if (mode==='Remote') return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold wm-remote">Remote</span>';
