@@ -15,7 +15,8 @@ import sys
 import re
 import argparse
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, date, timedelta, timezone
+from urllib.request import Request, urlopen
 
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +29,85 @@ from merge import deduplicate
 from utils.analysis import extract_keywords, detect_mandarin, extract_max_salary, clean_salary, HARD_SKILLS, SOFT_SKILLS
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "public", "data")
+LIVE_DATA_URL = "https://climbthesearches.com/hk-jobs/data"
+HKT = timezone(timedelta(hours=8))
+
+# Ads older than this are dropped. Lever and Greenhouse keep "evergreen" reqs open
+# for years (2022 dates were live on the site); nobody applies to those in time.
+MAX_AGE_DAYS = 45
+
+# url -> first date this pipeline saw the job, carried over from the live site.
+# CI starts from an empty checkout every day, so without this every job would look
+# brand new every run and "new since yesterday" would be meaningless.
+FIRST_SEEN: dict = {}
+
+
+def today_hk() -> date:
+    return datetime.now(HKT).date()
+
+
+def clean_posted_date(value, today: date = None):
+    """Return a sane posted date or None.
+
+    Sources emit junk: 0001-01-01 placeholders and dates in the future. A bad date
+    must read as "unknown", never as "fresh".
+    """
+    today = today or today_hk()
+    if not value:
+        return None
+    try:
+        d = value if isinstance(value, date) else date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+    if d.year < 2020 or d > today + timedelta(days=1):
+        return None
+    return d
+
+
+def load_first_seen(index_url: str = None) -> dict:
+    """Build url -> first_seen from the live site (falls back to local files).
+
+    Rows deployed before first_seen existed get their posted date, or the day the
+    live index was generated, so the first run after this change does not flag
+    every job as new.
+    """
+    seen = {}
+
+    def absorb(data, fallback):
+        for j in data.get("jobs", []):
+            url = j.get("url")
+            if not url:
+                continue
+            first = j.get("first_seen") or j.get("date") or fallback
+            if first and (url not in seen or first < seen[url]):
+                seen[url] = first[:10]
+
+    try:
+        base = index_url or LIVE_DATA_URL
+        def get(name):
+            req = Request(f"{base}/{name}?v={datetime.now().timestamp():.0f}",
+                          headers={"User-Agent": "hk-job-scraper/first-seen"})
+            with urlopen(req, timeout=30) as r:
+                return json.loads(r.read().decode("utf-8"))
+        index = get("index.json")
+        fallback = (index.get("generated") or "")[:10]
+        for entry in index.get("data", []):
+            try:
+                absorb(get(entry["file"]), fallback)
+            except Exception as e:
+                print(f"  first_seen: could not read live {entry.get('file')}: {e}")
+        print(f"  first_seen: {len(seen)} known jobs from the live site")
+    except Exception as e:
+        print(f"  first_seen: live site unreadable ({e}); using local files")
+        import glob as _glob
+        for f in _glob.glob(os.path.join(DATA_DIR, "*_hong-kong.json")):
+            try:
+                with open(f, encoding="utf-8") as fh:
+                    absorb(json.load(fh), "")
+            except Exception:
+                continue
+        print(f"  first_seen: {len(seen)} known jobs from local files")
+    return seen
 
 # ==========================================================================
 # CATEGORIES — targeted for Irmin's profile
@@ -104,14 +184,17 @@ PROFILE_SKILLS = {
     "google search console": 2, "google analytics": 2,
     "bi": 2, "kpi": 2, "html": 2, "css": 2,
     "aml": 2, "kyc": 2, "risk management": 2,
+    "copilot": 2, "ai builder": 2, "data governance": 2, "data quality": 2,
+    "stakeholder": 1, "reconciliation": 1,
 
     # Weight 1 — familiar / learning
     "machine learning": 1, "pytorch": 1, "langchain": 1,
     "docker": 1, "git": 1, "api": 1, "django": 1,
-    "tableau": 1, "azure": 1, "aws": 1,
+    "azure": 1, "aws": 1,
     "react": 1, "node.js": 1,
     "dbt": 1, "bigquery": 1,
-    "jira": 1, "agile": 1,
+    # Tableau, JIRA and Agile/Scrum deliberately absent: he cannot defend them
+    # in an interview (CLAUDE.md ATS rules), so they must not raise a match.
     "sem": 1, "google ads": 1,
 }
 
@@ -149,8 +232,10 @@ def calc_skill_match(title: str, description: str, skills_found: list) -> int:
 
     # Combine: title relevance + skill matches
     # Title alone can give up to 25, skills can give the rest
-    max_skill_score = sum(PROFILE_SKILLS.values())
-    skill_pct = (skill_score / max_skill_score) * 75 if max_skill_score > 0 else 0
+    # Saturate at SKILL_SCORE_FULL weighted points. Dividing by the weight of the
+    # WHOLE profile (~100) meant an ad asking for SQL + Python + Power BI + Excel
+    # scored 9%: every job looked like a non-match and the column was noise.
+    skill_pct = min(1.0, skill_score / SKILL_SCORE_FULL) * 75
 
     # Core skill boost
     core_matches = sum(1 for s in matched_skills if PROFILE_SKILLS.get(s, 0) >= 3)
@@ -382,6 +467,10 @@ def estimate_salary(seniority: str, company: str, category_label: str,
     return {"estimate": estimate, "confidence": confidence, "basis": basis}
 
 
+# Weighted skill points that count as a full skill match (e.g. 4 core skills + 1-2
+# strong ones). Above this the score stops climbing.
+SKILL_SCORE_FULL = 15
+
 # ==========================================================================
 # SCRAPING
 # ==========================================================================
@@ -480,6 +569,15 @@ def build_json(listings, query_label, location):
     all_hard = []
     all_soft = []
 
+    today = today_hk()
+    kept = []
+    for l in listings:
+        posted = clean_posted_date(l.posting_date, today)
+        if posted and (today - posted).days > MAX_AGE_DAYS:
+            continue
+        kept.append((l, posted))
+    listings = [l for l, _ in kept]
+
     sal_values = []
     for l in listings:
         ms = extract_max_salary(l.salary)
@@ -488,7 +586,7 @@ def build_json(listings, query_label, location):
 
     median_sal = int(sorted(sal_values)[len(sal_values) // 2]) if sal_values else 0
 
-    for l in listings:
+    for l, posted in kept:
         mandarin = detect_mandarin(l.description)
         skills = extract_keywords(l.description, True)
         soft = [kw for kw in SOFT_SKILLS if re.search(rf'\b{re.escape(kw)}\b', str(l.description or "").lower())]
@@ -529,7 +627,8 @@ def build_json(listings, query_label, location):
             "mandarin": mandarin or "",
             "skills": skills if skills else [],
             "type": l.job_type or "",
-            "date": str(l.posting_date or "")[:10],
+            "date": posted.isoformat() if posted else "",
+            "first_seen": FIRST_SEEN.get(l.url) or today.isoformat(),
             "source": l.source,
             "url": l.url or "",
             "match": match_score,
@@ -672,7 +771,8 @@ def _update_index(categories_labels, data_entries, scraped_counts):
             "categories": categories_labels,
             "data": data_entries,
             "scraped_counts": scraped_counts,
-            "generated": datetime.now().isoformat()[:19],
+            # With offset, so the page can show "updated 07:38 HKT" correctly
+            "generated": datetime.now(HKT).isoformat(timespec="seconds"),
         }, f, ensure_ascii=False, indent=2)
 
 
@@ -700,11 +800,16 @@ CONCURRENCY = 3
 LOCATION = "Hong Kong"  # Single location — HK is small, no district split
 
 
-async def generate_all(pages: int = 5, force: bool = False, **_kwargs):
+async def generate_all(pages: int = 5, force: bool = False, only: list = None, **_kwargs):
+    # `only` limits the run to a subset of CATEGORIES keys. Running one process per
+    # category instead would give each its own JobsDB cache and re-trigger the rate
+    # limiting, so subsetting has to happen INSIDE a single process.
+    cats = {k: v for k, v in CATEGORIES.items() if not only or k in only}
+    FIRST_SEEN.update(load_first_seen())
     print("=" * 60)
     print("HK JOB SCRAPER — TARGETED PROFILE SEARCH")
-    print(f"Categories: {len(CATEGORIES)}")
-    print(f"Queries per category: {sum(len(c['queries']) for c in CATEGORIES.values())} total search terms")
+    print(f"Categories: {len(cats)}" + (f" (subset of {len(CATEGORIES)})" if only else ""))
+    print(f"Queries per category: {sum(len(c['queries']) for c in cats.values())} total search terms")
     print(f"Location: {LOCATION}")
     print(f"Cache: {'DISABLED (--force)' if force else f'skip if < {CACHE_MAX_AGE_HOURS}h old'}")
     print(f"Concurrency: {CONCURRENCY} categories at once")
@@ -742,7 +847,7 @@ async def generate_all(pages: int = 5, force: bool = False, **_kwargs):
             return None
 
     results = await asyncio.gather(*[
-        process_category(slug, info) for slug, info in CATEGORIES.items()
+        process_category(slug, info) for slug, info in cats.items()
     ], return_exceptions=True)
 
     for r in results:
@@ -759,6 +864,36 @@ async def generate_all(pages: int = 5, force: bool = False, **_kwargs):
     total_jobs = sum(e["total_jobs"] for e in index_entries)
     print(f"\nDone: {len(index_entries)} categories, {total_jobs} total jobs")
 
+    # Per-source health. A source that quietly returns nothing used to be invisible:
+    # JobsDB contributed 0 jobs for weeks because a rate-limit error was swallowed
+    # and read as "no results". Never let a dead source look like a boring one.
+    from scrapers.jobsdb import JOBSDB_API_ERRORS
+
+    per_source = {}
+    import glob as _glob
+    for _f in _glob.glob(os.path.join(DATA_DIR, "*_hong-kong.json")):
+        try:
+            with open(_f, encoding="utf-8") as fh:
+                for j in json.load(fh).get("jobs", []):
+                    src = j.get("source") or "unknown"
+                    per_source[src] = per_source.get(src, 0) + 1
+        except Exception:
+            continue
+    for _expected in ("jobsdb", "linkedin", "indeed", "google", "lever", "greenhouse"):
+        per_source.setdefault(_expected, 0)
+    if per_source:
+        print("\nPer-source totals:")
+        for src, n in sorted(per_source.items(), key=lambda kv: -kv[1]):
+            flag = "   <-- ZERO, INVESTIGATE" if n == 0 else ""
+            print(f"  {src:<12} {n:>5}{flag}")
+
+    if JOBSDB_API_ERRORS:
+        print("\n" + "!" * 70)
+        print("CRITICAL: JobsDB API problems this run. 0 results does NOT mean 0 jobs.")
+        for msg in JOBSDB_API_ERRORS:
+            print(f"  - {msg}")
+        print("!" * 70)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -766,13 +901,20 @@ def main():
     parser.add_argument("--location", default="Hong Kong")
     parser.add_argument("--pages", type=int, default=5)
     parser.add_argument("--force", action="store_true", help="Ignore cache, re-scrape everything")
+    parser.add_argument("--categories", help="Comma-separated category slugs to run "
+                        "(e.g. data-analyst,business-intelligence). Default: all.")
     args = parser.parse_args()
 
     if args.query:
         asyncio.run(generate_single(args.query, args.location, args.query.title(),
                                     args.pages, force=args.force))
     else:
-        asyncio.run(generate_all(args.pages, force=args.force))
+        only = [c.strip() for c in args.categories.split(",")] if args.categories else None
+        if only:
+            unknown = [c for c in only if c not in CATEGORIES]
+            if unknown:
+                parser.error(f"unknown categories: {unknown}. Valid: {list(CATEGORIES)}")
+        asyncio.run(generate_all(args.pages, force=args.force, only=only))
 
 
 if __name__ == "__main__":

@@ -42,8 +42,9 @@ const base = import.meta.env.BASE_URL;
 
 <script is:inline define:vars={{ base }}>
 // ==================================================================
-var INDEX, ALL_JOBS = [], FILTERED = [], PAGE = 1, PER_PAGE = 20;
-var SORT_KEY = 'relevance', SORT_ASC = false, charts = {};
+var VER = '', INDEX, ALL_JOBS = [], FILTERED = [], PAGE = 1, PER_PAGE = 20;
+var SORT_KEY = 'date', SORT_ASC = false, charts = {};
+var TODAY_HK = hkDate(new Date()), LATEST_RUN = TODAY_HK;
 var DB = base + (base.endsWith('/') ? '' : '/') + 'data/';
 
 // Skill tag colors (soft pastels like Mexico scraper)
@@ -58,7 +59,19 @@ var TAG_COLORS = [
 // ==================================================================
 async function init() {
   try {
-    INDEX = await (await fetch(DB + 'index.json')).json();
+    INDEX = await (await fetch(DB + 'index.json', {cache: 'no-cache'})).json();
+    // Version the category files by the run that produced them: cached until the
+    // next daily run, never stale after it (cache-bust by version, not by clock)
+    VER = encodeURIComponent(INDEX.generated || '');
+    if (INDEX.generated) {
+      // Older runs wrote no offset; they ran on the UTC CI runner
+      var g = INDEX.generated;
+      var t = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(g) ? g : g + 'Z');
+      LATEST_RUN = hkDate(t);
+      var hh = new Date(t.getTime() + 8*3600e3).toISOString().slice(11,16);
+      document.getElementById('liveUpdated').textContent =
+        'Updated ' + (LATEST_RUN === TODAY_HK ? 'today' : LATEST_RUN) + ' ' + hh + ' HKT';
+    }
     var sel = document.getElementById('categorySelect');
     INDEX.categories.forEach(function(c) {
       var o = document.createElement('option'); o.value = c; o.textContent = c;
@@ -86,9 +99,13 @@ async function search() {
   ALL_JOBS = [];
   var withSal = 0, salBrackets = {};
 
-  for (var i = 0; i < Math.min(entries.length, 30); i++) {
+  var files = await Promise.all(entries.slice(0, 30).map(function(e) {
+    return fetch(DB + e.file + '?v=' + VER).then(function(r){ return r.json(); })
+      .catch(function(){ return null; });
+  }));
+  for (var i = 0; i < files.length; i++) {
     try {
-      var d = await (await fetch(DB + entries[i].file)).json();
+      var d = files[i]; if (!d) continue;
       ALL_JOBS = ALL_JOBS.concat(d.jobs || []);
       withSal += d.stats ? d.stats.with_salary || 0 : 0;
       if (d.charts && d.charts.salary_brackets) {
@@ -116,6 +133,10 @@ async function search() {
   var salPct = n > 0 ? Math.round((withSal/n)*100) : 0;
 
   document.getElementById('statJobs').textContent = n.toLocaleString();
+  var fresh = ALL_JOBS.filter(function(j){ var a = ageDays(j); return a !== null && a < 7; }).length;
+  var newToday = ALL_JOBS.filter(isNew).length;
+  document.getElementById('liveJobs').textContent =
+    fresh.toLocaleString() + ' posted this week | ' + newToday.toLocaleString() + ' new today';
   document.getElementById('statCompanies').textContent = Object.keys(comps).length.toLocaleString();
   document.getElementById('statTTPS').textContent = ttps.toLocaleString();
 
@@ -296,8 +317,15 @@ function applyFilters() {
   var wm = document.getElementById('workModeFilter').value;
   var src = document.getElementById('sourceFilter').value;
   var ttps = document.getElementById('ttpsFilter').checked;
+  var posted = document.getElementById('postedFilter').value;
+  var lang = document.getElementById('langFilter').value;
+  var onlyNew = document.getElementById('newFilter').checked;
 
   FILTERED = ALL_JOBS.filter(function(j) {
+    if (posted) { var a = ageDays(j); if (a === null || a >= Number(posted)) return false; }
+    if (lang === 'no-req' && j.mandarin === 'Required') return false;
+    if (lang === 'none' && j.mandarin) return false;
+    if (onlyNew && !isNew(j)) return false;
     if (q && j.title.toLowerCase().indexOf(q)===-1 && j.company.toLowerCase().indexOf(q)===-1) return false;
     if (sen && j.seniority!==sen) return false;
     if (wm && j.work_mode!==wm) return false;
@@ -308,6 +336,12 @@ function applyFilters() {
 
   FILTERED.sort(function(a,b) {
     var va=a[SORT_KEY]||'', vb=b[SORT_KEY]||'';
+    if (SORT_KEY==='date') {
+      // undated always last; same day -> better category fit first
+      if (!va || !vb) return (vb?1:0) - (va?1:0);
+      if (va!==vb) return SORT_ASC?va.localeCompare(vb):vb.localeCompare(va);
+      return (b.relevance||0)-(a.relevance||0) || (b.match||0)-(a.match||0);
+    }
     if (typeof va==='number'&&typeof vb==='number') return SORT_ASC?va-vb:vb-va;
     return SORT_ASC?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
   });
@@ -333,11 +367,12 @@ function renderTable() {
     return '<tr class="job-row border-b border-neutral-800/30">'
       +'<td class="py-3 pr-2 text-center" title="'+fitTip+'"><span class="fit-dot '+fitClass+'"></span></td>'
       +'<td class="py-3 pr-3"><div class="flex items-center gap-2"><span class="text-xs text-neutral-400 w-7 text-right font-medium">'+(Number(j.match)||0)+'%</span><div class="match-bar flex-1"><div class="match-bar-fill" style="width:'+(Number(j.match)||0)+'%;background:'+mc+'"></div></div></div></td>'
-      +'<td class="py-3 pr-3"><a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-neutral-200 hover:text-orange-400 font-medium text-sm transition">'+esc(j.title)+'</a>'+ttpsB+'</td>'
+      +'<td class="py-3 pr-3"><a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-neutral-200 hover:text-orange-400 font-medium text-sm transition">'+esc(j.title)+'</a>'+ttpsB+langBadge(j)+'</td>'
       +'<td class="py-3 pr-3 text-neutral-400 text-sm">'+esc(j.company)+'</td>'
       +'<td class="py-3 pr-3 text-sm">'+salHtml+'</td>'
       +'<td class="py-3 pr-3 text-xs text-neutral-500">'+esc(j.seniority||'')+'</td>'
       +'<td class="py-3 pr-3">'+wmPill(j.work_mode)+'</td>'
+      +'<td class="py-3 pr-3 text-xs whitespace-nowrap">'+postedHtml(j)+'</td>'
       +'<td class="py-3"><span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></td>'
       +'</tr>';
   }).join('');
@@ -363,7 +398,8 @@ function renderTable() {
       +'<div class="flex flex-wrap items-center gap-1.5">'
       +wmPill(j.work_mode)
       +(j.seniority?'<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-neutral-800 text-neutral-400 border border-neutral-700/50">'+esc(j.seniority)+'</span>':'')
-      +ttpsB
+      +ttpsB+langBadge(j)
+      +'<span class="text-[11px]">'+postedHtml(j)+'</span>'
       +'<span class="badge badge-'+esc(j.source)+'">'+esc(srcLabel)+'</span></div>'
       +(j.url?'<a href="'+safeUrl(j.url)+'" target="_blank" rel="noopener noreferrer" class="text-xs text-orange-400 hover:text-orange-300 font-semibold transition whitespace-nowrap">Apply &rarr;</a>':'')
       +'</div></div>';
@@ -400,6 +436,27 @@ function sortTable(key) {
   PAGE=1; applyFilters();
 }
 
+// Hong Kong calendar date (UTC+8, no DST) as YYYY-MM-DD
+function hkDate(d){ return new Date(d.getTime() + 8*3600e3).toISOString().slice(0,10); }
+function ageDays(j){
+  if (!j.date) return null;
+  return Math.max(0, Math.round((Date.parse(TODAY_HK) - Date.parse(j.date)) / 86400e3));
+}
+function isNew(j){ return !!j.first_seen && j.first_seen >= LATEST_RUN; }
+function postedHtml(j){
+  var a = ageDays(j), txt;
+  if (a === null) txt = '<span class="text-neutral-600">date unknown</span>';
+  else if (a === 0) txt = '<span class="text-emerald-400 font-medium">today</span>';
+  else if (a === 1) txt = '<span class="text-emerald-400">1d ago</span>';
+  else txt = '<span class="'+(a<=7?'text-neutral-300':'text-neutral-500')+'">'+a+'d ago</span>';
+  return txt + (isNew(j) ? ' <span class="badge badge-new">NEW</span>' : '');
+}
+function langBadge(j){
+  if (j.mandarin === 'Required') return '<span class="badge badge-lang ml-1" title="The ad requires Chinese (Cantonese or Mandarin)">Chinese req</span>';
+  if (j.mandarin === 'Preferred') return '<span class="badge badge-lang-soft ml-1" title="Chinese preferred, not required">Chinese pref</span>';
+  return '';
+}
+
 function esc(s){var d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 // For href attributes: esc() leaves quotes intact, and scraped URLs must not be
 // able to break out of the attribute or use javascript:/data: schemes.
@@ -432,7 +489,8 @@ function salaryHtml(j) {
 
 function downloadExcel() {
   var rows = FILTERED.map(function(j){
-    return {'Match%':j.match,Title:j.title,Company:j.company,Salary:j.salary,
+    return {Posted:j.date||'','First seen':j.first_seen||'',Chinese:j.mandarin||'',
+      'Match%':j.match,Title:j.title,Company:j.company,Salary:j.salary,
       Seniority:j.seniority||'','Work Mode':j.work_mode||'',TTPS:j.ttps?'Yes':'No',
       Skills:(j.skills||[]).join(', '),Source:j.source,URL:j.url};
   });
@@ -452,6 +510,9 @@ document.getElementById('seniorityFilter').addEventListener('change',function(){
 document.getElementById('workModeFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
 document.getElementById('sourceFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
 document.getElementById('ttpsFilter').addEventListener('change',function(){PAGE=1;applyFilters();});
+['postedFilter','langFilter','newFilter'].forEach(function(id){
+  document.getElementById(id).addEventListener('change',function(){PAGE=1;applyFilters();});
+});
 document.getElementById('prevPageBtn').addEventListener('click',function(){if(PAGE>1){PAGE--;renderTable();}});
 document.getElementById('nextPageBtn').addEventListener('click',function(){if(PAGE<Math.ceil(FILTERED.length/PER_PAGE)){PAGE++;renderTable();}});
 document.getElementById('downloadExcelBtn').addEventListener('click',downloadExcel);
@@ -460,7 +521,7 @@ document.getElementById('viewCards').addEventListener('click',function(){switchV
 document.querySelectorAll('th[data-sort]').forEach(function(th){th.addEventListener('click',function(){sortTable(th.getAttribute('data-sort'));});});
 document.getElementById('categorySelect').addEventListener('keydown',function(e){if(e.key==='Enter')search();});
 
-var initArrow=document.querySelector('th[data-sort="relevance"] .sort-arrow');
+var initArrow=document.querySelector('th[data-sort="date"] .sort-arrow');
 if(initArrow) initArrow.textContent=' ↓';
 
 init();

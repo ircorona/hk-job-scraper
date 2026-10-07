@@ -1,18 +1,22 @@
-"""JobsDB Hong Kong scraper — GraphQL API (reverse-engineered).
+"""JobsDB Hong Kong scraper - public search API + GraphQL job details.
 
-JobsDB (owned by SEEK) exposes a GraphQL endpoint at hk.jobsdb.com/graphql.
-- Cloudflare blocks HTML pages but NOT the GraphQL API
-- No search query exposed — we scan job IDs by range
-- HK zone = "asia-1"
-- Job IDs are sequential 8-digit integers shared across all SEEK sites
-- We fetch jobDetails(id) for enrichment: title, company, salary, location, description
+Discovery: hk.jobsdb.com/api/jobsearch/v5/search (the JSON API behind the site's own
+search page). It takes real keywords, a `dateRange` in days and a sort mode, and
+returns `listingDate` per job, so every row has a trustworthy posted date.
 
-Strategy: Scan recent job IDs, filter by sourceZone="asia-1" (HK).
+Enrichment: hk.jobsdb.com/graphql `jobDetails(id)` returns the full ad text. We need
+the full text, not the 1-line teaser, because the Chinese-language requirement and
+most skills only appear in the body of the ad.
+
+History: until Oct 2026 this scraper scanned sequential job IDs downward from a
+hardcoded ceiling of 90,000,000. Live IDs passed that in January 2026, so for eight
+months CI collected ~100 January ads and nothing newer. Keyword search has no ID
+range to go stale.
 """
 
 import re
 import asyncio
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 from html import unescape
 
@@ -22,6 +26,9 @@ from models.job_listing import JobListing
 from .base import BaseScraper
 from utils.helpers import get_user_agent
 
+
+SEARCH_URL = "https://hk.jobsdb.com/api/jobsearch/v5/search"
+HKT = timezone(timedelta(hours=8))
 
 JOBDETAILS_QUERY = """
 query JobDetails($id: ID!) {
@@ -42,6 +49,39 @@ query JobDetails($id: ID!) {
 }
 """
 
+# Only ads posted within this many days are collected. Older ads have had most of
+# their applicants already; the goal is to apply within days of posting.
+DATE_RANGE_DAYS = 14
+PAGE_SIZE = 100
+
+# Full-ad fetches per run. ~36 queries x 100 results dedupe to roughly 1,000-1,500
+# unique ads. Past the budget we fall back to teaser + bullet points rather than
+# hammer the GraphQL endpoint into RATE_LIMITED.
+MAX_DETAIL_FETCHES = 1800
+DETAIL_CONCURRENCY = 3
+DETAIL_DELAY = 0.3
+
+# Process-wide caches. generate_data.py calls scrape() once per query and the same ad
+# shows up under many queries; fetch each ad's details once per run.
+_SEARCH_CACHE: dict[str, list] = {}
+_DETAIL_CACHE: dict[str, Optional[dict]] = {}
+_detail_sem: Optional[asyncio.Semaphore] = None
+_detail_fetches = 0
+_rate_limited_streak = 0
+# Populated when the API refuses us, so the run can report it instead of printing
+# "0 HK jobs" and looking like a quiet, boring, empty result.
+JOBSDB_API_ERRORS: list[str] = []
+
+
+def _headers() -> dict:
+    return {
+        "User-Agent": get_user_agent(),
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Origin": "https://hk.jobsdb.com",
+        "Referer": "https://hk.jobsdb.com/",
+    }
+
 
 class JobsDBScraper(BaseScraper):
     SOURCE = "jobsdb"
@@ -49,170 +89,169 @@ class JobsDBScraper(BaseScraper):
     HK_ZONE = "asia-1"
 
     async def scrape(self, query: str, location: str, max_pages: Optional[int] = None) -> list[JobListing]:
-        """Grab ALL recent HK jobs from JobsDB via GraphQL ID scanning.
+        """Return HK ads matching `query` posted in the last DATE_RANGE_DAYS days."""
+        key = query.lower().strip()
+        if key in _SEARCH_CACHE:
+            return list(_SEARCH_CACHE[key])
 
-        ~15% of SEEK IDs are HK (asia-1). We scan backwards from the latest ID
-        in parallel batches of 10, collecting every HK job we find.
-        Keyword filtering happens later on the frontend/generate_data layer.
+        async with httpx.AsyncClient(headers=_headers(), timeout=20) as client:
+            summaries = await self._search(client, query)
+            details = await asyncio.gather(
+                *[self._details(client, str(s.get("id", ""))) for s in summaries])
+            listings = []
+            for s, d in zip(summaries, details):
+                listing = self._build_listing(s, d)
+                if listing and self._matches_query(query, listing.title, listing.description):
+                    listings.append(listing)
 
-        pages controls volume: each "page" = ~50 HK jobs collected.
-        """
-        pages = max_pages or self.max_pages
-        target = pages * 50
-        listings: list[JobListing] = []
+        print(f"  [JobsDB] '{query}': {len(summaries)} ads in last {DATE_RANGE_DAYS}d "
+              f"-> {len(listings)} keep (detail fetches so far: {_detail_fetches})")
+        _SEARCH_CACHE[key] = listings
+        return list(listings)
 
-        print(f"  [JobsDB] Collecting latest {target} HK jobs via GraphQL...")
+    async def _search(self, client, query: str, pages: int = 1) -> list[dict]:
+        """Keyword search, best matches first, limited to recent ads."""
+        out = []
+        for page in range(1, pages + 1):
+            params = {
+                "siteKey": "HK-Main", "sourcesystem": "houston", "locale": "en-HK",
+                "keywords": query, "page": page, "pageSize": PAGE_SIZE,
+                "sortmode": "KeywordRelevance", "dateRange": DATE_RANGE_DAYS,
+            }
+            try:
+                resp = await client.get(SEARCH_URL, params=params)
+            except Exception as e:
+                JOBSDB_API_ERRORS.append(f"search '{query}' failed: {str(e)[:80]}")
+                break
+            if resp.status_code != 200:
+                JOBSDB_API_ERRORS.append(f"search '{query}' HTTP {resp.status_code}")
+                break
+            data = (resp.json() or {}).get("data") or []
+            out.extend(data)
+            if len(data) < PAGE_SIZE:
+                break
+            await asyncio.sleep(0.5)
+        return out
 
-        headers = {
-            "User-Agent": get_user_agent(),
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Origin": "https://hk.jobsdb.com",
-            "Referer": "https://hk.jobsdb.com/",
-        }
+    async def _details(self, client, job_id: str) -> Optional[dict]:
+        """Full ad via GraphQL, cached per run, within the per-run budget."""
+        global _detail_sem, _detail_fetches, _rate_limited_streak
+        if not job_id:
+            return None
+        if job_id in _DETAIL_CACHE:
+            return _DETAIL_CACHE[job_id]
+        if _detail_fetches >= MAX_DETAIL_FETCHES or _rate_limited_streak >= 5:
+            return None
+        if _detail_sem is None:
+            _detail_sem = asyncio.Semaphore(DETAIL_CONCURRENCY)
 
-        async with httpx.AsyncClient(headers=headers, verify=False, timeout=15) as client:
-            latest_id = await self._find_latest_id(client)
-            if not latest_id:
-                print("    Could not determine latest job ID range")
-                return []
+        async with _detail_sem:
+            _detail_fetches += 1
+            result = await self._fetch_job(client, job_id)
+            if result and result.get("_rate_limited"):
+                _rate_limited_streak += 1
+                if _rate_limited_streak == 5:
+                    JOBSDB_API_ERRORS.append(
+                        f"job details RATE_LIMITED 5x in a row after {_detail_fetches} "
+                        f"fetches; remaining ads use the search teaser only")
+                await asyncio.sleep(min(2 ** _rate_limited_streak, 30))
+                return None
+            _rate_limited_streak = 0
+            await asyncio.sleep(DETAIL_DELAY)
 
-            print(f"    Starting from ID ~{latest_id:,}")
-
-            concurrent = 10
-            scanned = 0
-            max_scan = target * 8  # ~15% are HK → scan ~8x target
-
-            current_id = latest_id
-            while len(listings) < target and scanned < max_scan:
-                batch_ids = list(range(current_id, current_id - concurrent, -1))
-                current_id -= concurrent
-                scanned += concurrent
-
-                tasks = [self._fetch_job(client, str(jid)) for jid in batch_ids]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                for job_data in results:
-                    if isinstance(job_data, Exception) or not job_data:
-                        continue
-                    job = job_data.get("job")
-                    if not job or job.get("sourceZone") != self.HK_ZONE:
-                        continue
-
-                    listing = self._parse_graphql(job)
-                    if listing:
-                        listings.append(listing)
-
-                await asyncio.sleep(0.1)
-
-            print(f"    Scanned {scanned} IDs → {len(listings)} HK jobs")
-
-        print(f"  [JobsDB] Done: {len(listings)} listings (with descriptions)")
-        return listings
-
-    async def _find_latest_id(self, client: httpx.AsyncClient) -> Optional[int]:
-        """Binary search for the latest active job ID."""
-        # Start high, work down
-        for probe in [90000000, 88000000, 86000000, 85000000, 84000000, 83000000, 82000000]:
-            job = await self._fetch_job(client, str(probe))
-            if job and job.get("job"):
-                return probe
-        return 85000000  # fallback
+        job = (result or {}).get("job")
+        _DETAIL_CACHE[job_id] = job
+        return job
 
     async def _fetch_job(self, client: httpx.AsyncClient, job_id: str) -> Optional[dict]:
-        """Fetch a single job via GraphQL."""
+        """Fetch a single job via GraphQL.
+
+        Returns {"_rate_limited": True} rather than None when the API refuses, so the
+        caller can tell "this ID has no job" apart from "the API is blocking us".
+        Conflating those is why JobsDB silently contributed zero jobs for weeks.
+        """
         try:
             resp = await client.post(self.GRAPHQL_URL, json={
                 "query": JOBDETAILS_QUERY,
                 "variables": {"id": job_id},
             })
+            if resp.status_code == 429:
+                return {"_rate_limited": True}
             if resp.status_code != 200:
                 return None
             data = resp.json()
+            for err in (data.get("errors") or []):
+                code = (err.get("extensions") or {}).get("code", "")
+                if code == "RATE_LIMITED" or "too many requests" in err.get("message", "").lower():
+                    return {"_rate_limited": True}
             return data.get("data", {}).get("jobDetails")
         except Exception:
             return None
 
-    def _matches_query(self, query: str, title: str, abstract: str, content: str) -> bool:
-        """Check if the job matches the search query."""
-        terms = query.split()
-        text = f"{title} {abstract} {content}"
-        return all(term in text for term in terms)
+    @staticmethod
+    def _matches_query(query: str, title: str, description: str) -> bool:
+        """Every query word must appear in the ad. Search relevance alone is loose:
+        'data analyst' also returns PMO managers and crew rostering supervisors."""
+        text = f"{title} {description}".lower()
+        return all(re.search(rf"\b{re.escape(w)}\b", text) for w in query.lower().split())
 
-    def _parse_graphql(self, job: dict) -> Optional[JobListing]:
-        """Parse GraphQL job response into JobListing."""
-        title = job.get("title", "")
-        if not title:
+    def _build_listing(self, s: dict, details: Optional[dict]) -> Optional[JobListing]:
+        """Merge a search summary with (optional) full details."""
+        job_id = str(s.get("id") or "")
+        title = re.sub(r"<[^>]+>", "", s.get("title") or "").strip(" :|-")
+        if not job_id or not title:
             return None
-        title = re.sub(r'<[^>]+>', '', title).strip()
 
-        advertiser = job.get("advertiser") or {}
-        company = advertiser.get("name") or "Unknown"
+        company = ((s.get("advertiser") or {}).get("description")
+                   or s.get("companyName") or "Unknown")
+        locs = s.get("locations") or []
+        location = (locs[0] or {}).get("label", "") if locs else ""
 
-        location = ""
-        loc = job.get("location")
-        if loc:
-            location = loc.get("label", "")
+        if details and details.get("content"):
+            description = self._strip_html(details["content"])
+        else:
+            parts = [s.get("teaser") or ""] + list(s.get("bulletPoints") or [])
+            description = "\n".join(p for p in parts if p)
 
-        salary_obj = job.get("salary")
-        salary = salary_obj.get("label") if salary_obj else None
+        arrangements = ((s.get("workArrangements") or {}).get("data") or [])
+        work_mode = ((arrangements[0] or {}).get("label") or {}).get("text") if arrangements else None
 
-        # Description: use content (full HTML) or abstract (summary)
-        content = job.get("content", "")
-        abstract = job.get("abstract", "")
-        description = self._strip_html(content) if content else abstract
-
-        posting_date = None
-        listed = job.get("listedAt")
-        if listed:
-            try:
-                dt_str = listed.get("dateTimeUtc", "")
-                if dt_str:
-                    posting_date = datetime.fromisoformat(dt_str.replace("Z", "+00:00")).date()
-            except Exception:
-                pass
-
-        work_types = job.get("workTypes")
-        job_type = work_types.get("label") if work_types else None
-
-        job_id = job.get("id", "")
-        url = f"https://hk.jobsdb.com/job/{job_id}" if job_id else ""
+        work_types = s.get("workTypes") or []
+        job_type = work_types[0] if work_types else None
 
         return JobListing(
             title=title,
             company=company,
             location=location,
-            salary=salary,
+            salary=(s.get("salaryLabel") or None),
             description=description,
-            url=url,
-            posting_date=posting_date,
+            url=f"https://hk.jobsdb.com/job/{job_id}",
+            posting_date=parse_listing_date(s.get("listingDate")),
             job_type=job_type,
+            work_mode=work_mode,
             source=self.SOURCE,
         )
-
-    @staticmethod
-    async def fetch_job_by_id(job_id: str) -> Optional[dict]:
-        """Public method to fetch a single job by ID (for enrichment)."""
-        headers = {
-            "Content-Type": "application/json",
-            "Origin": "https://hk.jobsdb.com",
-        }
-        async with httpx.AsyncClient(headers=headers, verify=False, timeout=10) as client:
-            resp = await client.post("https://hk.jobsdb.com/graphql", json={
-                "query": JOBDETAILS_QUERY,
-                "variables": {"id": job_id},
-            })
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("data", {}).get("jobDetails", {}).get("job")
-        return None
 
     @staticmethod
     def _strip_html(html: str) -> str:
         if not html:
             return ""
-        text = re.sub(r'<br\s*/?>', '\n', html)
-        text = re.sub(r'<[^>]+>', '', text)
+        text = re.sub(r"<br\s*/?>|</p>|</li>", "\n", html)
+        text = re.sub(r"<[^>]+>", "", text)
         text = unescape(text)
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        return text.strip()[:3000]
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()[:6000]
+
+
+def parse_listing_date(value: Optional[str]) -> Optional[date]:
+    """'2026-10-07T13:21:27Z' -> date in HK time. None for missing or garbage."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # HKT = UTC+8, no DST. An ad posted 23:30 UTC on the 6th is the 7th in HK.
+    return dt.astimezone(HKT).date()

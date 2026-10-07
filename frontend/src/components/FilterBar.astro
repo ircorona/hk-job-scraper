@@ -13,6 +13,22 @@
     <div class="flex flex-wrap gap-2 items-center">
       <input type="text" id="searchInputDesktop" placeholder="Filter by title or company..."
         class="input flex-1 min-w-[160px] hidden sm:block" title="Search by job title or company name" />
+      <select id="postedFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Posted within (Hong Kong date)">
+        <option value="1">Posted: today</option>
+        <option value="3">Last 3 days</option>
+        <option value="7" selected>Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="">Any date</option>
+      </select>
+      <select id="langFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Chinese-language requirement, read from the full job ad">
+        <option value="no-req" selected>Chinese not required</option>
+        <option value="none">No Chinese mentioned</option>
+        <option value="">Any language</option>
+      </select>
+      <label class="flex items-center gap-1.5 text-xs text-neutral-400 cursor-pointer select-none whitespace-nowrap w-[calc(50%-4px)] sm:w-auto">
+        <input type="checkbox" id="newFilter" class="accent-orange-500 w-3.5 h-3.5" />
+        <span title="Only jobs that appeared in the latest daily run">New today</span>
+      </label>
       <select id="seniorityFilter" class="input text-xs sm:text-sm w-[calc(50%-4px)] sm:w-auto" title="Filter by seniority level">
         <option value="">All Levels</option>
         <option value="Junior">Junior</option>

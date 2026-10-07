@@ -80,6 +80,9 @@
   .badge-lever       { background: #1eb47c; color: #fff; }
   .badge-greenhouse  { background: #24a148; color: #fff; }
   .badge-ttps        { background: #7c3aed; color: #fff; font-size: 0.55rem; }
+  .badge-new         { background: #16a34a; color: #fff; font-size: 0.55rem; }
+  .badge-lang        { background: #7f1d1d; color: #fecaca; font-size: 0.55rem; }
+  .badge-lang-soft   { background: #3f3f46; color: #d4d4d8; font-size: 0.55rem; }
 
   /* ── Work mode pills ───────────────────────────────────── */
   .wm-remote  { background: #065f46; color: #6ee7b7; border: 1px solid #047857; }
