@@ -67,6 +67,38 @@
   .applied-btn:hover { border-color: var(--ink); color: var(--ink); }
   .applied-btn[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 
+  /* Per-job pipeline: 1 Read JD -> 2 Customize -> 3 Applied (segmented control) */
+  .pipe { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .pipe-step {
+    display: inline-flex; align-items: center; gap: .375rem; min-height: 2.25rem; padding: .25rem .625rem;
+    font-size: .8125rem; font-weight: 500; color: var(--ink-2); white-space: nowrap; text-decoration: none;
+    border-left: 1px solid var(--rule); transition: background-color .15s ease, color .15s ease;
+  }
+  .pipe-step:first-child { border-left: 0; }
+  .pipe-step:hover { background: var(--well); color: var(--ink); }
+  .pipe-n {
+    display: inline-flex; align-items: center; justify-content: center; width: 1.125rem; height: 1.125rem;
+    border-radius: 999px; border: 1px solid var(--rule-strong); font-size: .6875rem; line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  /* the step to do next: orange fill on the number only (text on orange is ink) */
+  .pipe-step.is-next { color: var(--ink); font-weight: 600; }
+  .pipe-step.is-next .pipe-n { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+  .pipe-step.is-done { background: var(--well); color: var(--ink); }
+  .pipe-step.is-done .pipe-n { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .pipe-step[data-step="applied"].is-done { background: var(--ink); color: var(--paper); }
+  .pipe-step[data-step="applied"].is-done .pipe-n { background: var(--paper); border-color: var(--paper); color: var(--ink); }
+  .pipe-step.is-disabled { opacity: .45; pointer-events: none; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 1.5rem; z-index: 50; max-width: min(92vw, 34rem);
+    transform: translate(-50%, .5rem); opacity: 0; pointer-events: none;
+    background: var(--ink); color: var(--paper); padding: .625rem .875rem; border-radius: 4px;
+    font-size: .875rem; line-height: 1.4; overflow-wrap: anywhere; transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; user-select: all; }
+  @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
   .badge { display: inline-block; padding: .125rem .375rem; border-radius: 4px; font-size: .75rem; font-weight: 500; white-space: nowrap; line-height: 1.35; }
   .badge-neutral { background: var(--well); color: var(--ink-2); }
   .badge-warn { background: var(--accent-tint); color: var(--accent-deep); }

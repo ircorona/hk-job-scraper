@@ -52,6 +52,7 @@ const base = import.meta.env.BASE_URL;
       </div>
     </div>
     <p id="appliedStatus" class="sr-only" role="status" aria-live="polite"></p>
+    <p id="toast" class="toast" aria-hidden="true"></p>
   </main>
 
   <Footer />
@@ -117,6 +118,106 @@ function saveApplied() {
   try { window.localStorage.setItem(APPLIED_KEY, JSON.stringify(APPLIED)); } catch (e) {}
 }
 function isApplied(j) { return Object.prototype.hasOwnProperty.call(APPLIED, j._k); }
+
+// Pipeline per job: 1 Read JD -> 2 Customize -> 3 Applied. Steps 1-2 live here,
+// step 3 is APPLIED above (kept separate so existing applied marks survive).
+var STAGE_KEY = 'hkjobs.stage.v1', STAGE = {};
+function loadStage() {
+  try {
+    var raw = window.localStorage.getItem(STAGE_KEY);
+    var o = raw ? JSON.parse(raw) : {};
+    if (o && typeof o === 'object' && !Array.isArray(o)) STAGE = o;
+  } catch (e) { STAGE = {}; }
+}
+function saveStage() {
+  try { window.localStorage.setItem(STAGE_KEY, JSON.stringify(STAGE)); } catch (e) {}
+}
+function stageOf(j) { return STAGE[j._k] || {}; }
+function markStep(j, step) {
+  var s = STAGE[j._k] || (STAGE[j._k] = {});
+  if (!s[step]) { s[step] = TODAY_HK; saveStage(); }
+}
+
+var toastTimer = null;
+function toast(msg, ms) {
+  var t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  $('appliedStatus').textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); }, ms || 3200);
+}
+function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return fallbackCopy(text); });
+  } catch (e) {}
+  return Promise.resolve(fallbackCopy(text));
+}
+function fallbackCopy(text) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = document.execCommand('copy'); document.body.removeChild(ta); return ok;
+  } catch (e) { return false; }
+}
+// Raw (unescaped) values: these go to the clipboard, never into HTML.
+function q(s) { return String(s || '').replace(/"/g, "'").replace(/\s+/g, ' ').trim(); }
+function tailorText(j) {
+  return '/tailor-application ' + q(j.title) + ' | ' + q(j.company) + ' | ' + String(j.url || '');
+}
+function funnelText(j) {
+  return 'python funnel.py add --company "' + q(j.company) + '" --role "' + q(j.title) + '"' +
+    (j.url ? ' --url ' + String(j.url) : '');
+}
+
+function onStep(step, id) {
+  var j = JOBS[id]; if (!j) return;
+  if (step === 'read') {
+    markStep(j, 'read');
+    toast('Step 1 done: reading ' + (j.title || 'the ad') + '. Next: Customize.');
+    // After the click finishes: swapping the link out mid-click can cancel the navigation
+    setTimeout(function () { refreshPipes(id); }, 0);
+  } else if (step === 'custom') {
+    markStep(j, 'read'); markStep(j, 'custom');
+    copyText(tailorText(j)).then(function (ok) {
+      toast(ok ? 'Copied the tailoring request. Paste it into Claude Code.' : 'Could not copy. Tailor: ' + tailorText(j), ok ? 0 : 10000);
+    });
+    refreshPipes(id);
+  } else if (step === 'applied') {
+    var wasApplied = isApplied(j);
+    toggleApplied(id);
+    if (!wasApplied) {
+      copyText(funnelText(j)).then(function (ok) {
+        toast(ok ? 'Applied. Copied the funnel.py line: paste it in a terminal to log it.' : 'Applied. Log it: ' + funnelText(j), ok ? 0 : 10000);
+      });
+    } else toast('Unmarked as applied.');
+  }
+}
+// Re-render only the step states for one job, so the list does not jump while reading.
+function refreshPipes(id) {
+  var j = JOBS[id]; if (!j) return;
+  document.querySelectorAll('[data-pipe="' + id + '"]').forEach(function (el) {
+    el.outerHTML = pipeHtml(j, el.getAttribute('data-compact') === '1');
+  });
+}
+function pipeHtml(j, compact) {
+  var s = stageOf(j), applied = isApplied(j), url = safeUrl(j.url), title = esc(j.title);
+  var done = { read: !!s.read || applied, custom: !!s.custom || applied, applied: applied };
+  var next = !done.read ? 'read' : !done.custom ? 'custom' : !done.applied ? 'applied' : '';
+  function cls(step) { return 'pipe-step' + (done[step] ? ' is-done' : '') + (next === step ? ' is-next' : ''); }
+  function lab(n, full, short) {
+    return '<span class="pipe-n" aria-hidden="true">' + (done[['', 'read', 'custom', 'applied'][n]] ? '&#10003;' : n) + '</span>' +
+      (compact ? short : full);
+  }
+  var read = url !== '#'
+    ? '<a class="' + cls('read') + '" href="' + url + '" target="_blank" rel="noopener noreferrer" data-step="read" data-id="' + j._id + '" aria-label="Step 1, read the job description: ' + title + '">' + lab(1, 'Read JD', 'Read') + '</a>'
+    : '<span class="' + cls('read') + ' is-disabled">' + lab(1, 'Read JD', 'Read') + '</span>';
+  return '<div class="pipe" role="group" aria-label="Pipeline: ' + title + '" data-pipe="' + j._id + '" data-compact="' + (compact ? 1 : 0) + '">'
+    + read
+    + '<button type="button" class="' + cls('custom') + '" data-step="custom" data-id="' + j._id + '" aria-label="Step 2, customize the resume: copy the tailoring request for ' + title + '">' + lab(2, 'Customize', 'Tailor') + '</button>'
+    + '<button type="button" class="' + cls('applied') + '" data-step="applied" data-id="' + j._id + '" aria-pressed="' + applied + '" aria-label="Step 3, ' + (applied ? 'applied, click to undo: ' : 'mark applied: ') + title + '">' + lab(3, 'Applied', 'Applied') + '</button>'
+    + '</div>';
+}
 function toggleApplied(id) {
   var j = JOBS[id]; if (!j) return;
   var now;
@@ -128,7 +229,7 @@ function toggleApplied(id) {
   renderPicks();
   applyFilters(true);
   // Keep keyboard focus on the same job's button if it is still on screen
-  var again = document.querySelector('#picksList [data-applied="' + id + '"], #jobTableBody [data-applied="' + id + '"], #jobCards [data-applied="' + id + '"]');
+  var again = document.querySelector('[data-step="applied"][data-id="' + id + '"]');
   if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
   else $('showAppliedBtn').focus({ preventScroll: true });
 }
@@ -168,7 +269,7 @@ function safeUrl(u) {
 // LOAD
 // ==================================================================
 async function init() {
-  loadApplied();
+  loadApplied(); loadStage();
   try {
     INDEX = await (await fetch(DB + 'index.json', { cache: 'no-cache' })).json();
   } catch (e) { showErr('Could not load the job data. Try again in a minute.'); return; }
@@ -311,10 +412,7 @@ function renderPicks() {
       +   (meta ? '<p class="mt-1 text-sm text-ink-2">' + meta + '</p>' : '')
       +   '<p class="mt-1 text-sm text-ink-3">' + esc(whyLine(j)) + '</p>'
       + '</div>'
-      + '<div class="col-start-2 md:col-start-auto flex items-center gap-3 md:pt-0.5">'
-      +   (p.url !== '#' ? '<a href="' + p.url + '" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold text-accent-ink underline underline-offset-4 decoration-[#F2B48A] hover:decoration-accent-ink">Open ad<span class="sr-only">: ' + p.title + '</span></a>' : '')
-      +   p.appliedBtn
-      + '</div>'
+      + '<div class="col-start-2 md:col-start-auto md:pt-0.5">' + pipeHtml(j, false) + '</div>'
       + '</li>';
   }).join('');
 }
@@ -569,7 +667,7 @@ function postedText(j) {
 function jobParts(j) {
   var url = safeUrl(j.url), title = esc(j.title);
   var titleLink = url !== '#'
-    ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer" class="font-medium text-ink hover:text-accent-ink hover:underline underline-offset-2 transition-colors">' + title + '</a>'
+    ? '<a href="' + url + '" target="_blank" rel="noopener noreferrer" data-step="read" data-id="' + j._id + '" class="font-medium text-ink hover:text-accent-ink hover:underline underline-offset-2 transition-colors">' + title + '</a>'
     : '<span class="font-medium text-ink">' + title + '</span>';
   var a = ageDays(j);
   var newB = isNew(j) ? ' <span class="badge border border-ink text-ink">New</span>' : '';
@@ -601,7 +699,7 @@ function jobParts(j) {
     posted: posted, chinese: chinese, ttps: ttps, salHtml: salHtml, salaryShort: salTxt,
     level: esc(j.seniority || ''), mode: esc(j.work_mode || ''),
     match: Number(j.match) || 0, source: esc(SRC_NAMES[j.source] || j.source || ''),
-    appliedBtn: appliedBtn, applied: applied
+    appliedBtn: appliedBtn, applied: applied, pipe: pipeHtml(j, true), pipeFull: pipeHtml(j, false)
   };
 }
 
@@ -676,7 +774,7 @@ function renderTable() {
       + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.mode + '</td>'
       + '<td class="px-3 py-3 text-right num text-ink">' + p.match + '</td>'
       + '<td class="px-3 py-3 text-ink-3 whitespace-nowrap">' + p.source + '</td>'
-      + '<td class="pl-3 pr-4 py-2.5 text-right">' + p.appliedBtn + '</td>'
+      + '<td class="pl-3 pr-4 py-2.5 text-right">' + p.pipe + '</td>'
       + '</tr>';
   }).join('');
 
@@ -690,9 +788,7 @@ function renderTable() {
       + '<p class="text-sm mt-2 num">' + p.salHtml + '</p>'
       + ((p.chinese || p.ttps) ? '<div class="flex flex-wrap gap-1.5 mt-2">' + p.chinese + p.ttps + '</div>' : '')
       + '<p class="text-sm text-ink-2 mt-2">' + meta + '</p>'
-      + '<div class="flex items-center justify-between gap-3 mt-3">' + p.appliedBtn
-      +   (p.url !== '#' ? '<a href="' + p.url + '" target="_blank" rel="noopener noreferrer" class="px-2 py-1.5 -mr-2 text-sm font-semibold text-accent-ink underline underline-offset-4 decoration-[#F2B48A]">Open ad<span class="sr-only">: ' + p.title + '</span></a>' : '')
-      + '</div></li>';
+      + '<div class="mt-3">' + p.pipeFull + '</div></li>';
   }).join('');
 
   $('jobsEmpty').classList.toggle('hidden', total > 0);
@@ -800,8 +896,8 @@ function wire() {
   });
   // One delegated handler for every Mark applied button (picks, rows, cards)
   document.addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('[data-applied]') : null;
-    if (b) toggleApplied(Number(b.getAttribute('data-applied')));
+    var b = e.target.closest ? e.target.closest('[data-step]') : null;
+    if (b) onStep(b.getAttribute('data-step'), Number(b.getAttribute('data-id')));
   });
 }
 
