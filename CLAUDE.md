@@ -183,6 +183,19 @@ All in `.env` (gitignored) and GitHub Secrets:
   Prints the top 15 with real apply URLs; `--csv path` writes them out. Never run in CI:
   the tracker is private.
 
+## Funnel tracking (local only, 2026-10-08)
+- Goal: 3 interviews/month (was 3 in 6 months). Target 15 applications/week; at the
+  measured ~4% application-to-interview rate that is the volume the goal needs.
+- `python funnel.py` reads tracker.csv: weekly applications vs 15, emails, replies,
+  interviews, this month vs 3, built-but-never-sent backlog, day-7 follow-ups.
+- `python funnel.py add --company X --role Y --url U` logs an application with the HTTP
+  date (machine clock is unreliable). Log interviews as their own row, status INTERVIEW.
+- NOT on the website: the tracker holds contacts and statuses and the site is public.
+  The dashboard's "Mark applied" is per-browser localStorage and does not sync to it.
+- Data Engineer assessment (2026-10-08, 11 JobsDB DE ads): 82% want a CS/IT degree,
+  45% Spark, 36% Databricks/Kafka. Keep DE to ~10% of applications, only roles that lead
+  with SQL/Python/Power BI/Snowflake; data roles stay the main focus.
+
 ## Usage
 ```bash
 # Full scrape (all 12 categories, 7 sources)
