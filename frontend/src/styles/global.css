@@ -89,6 +89,12 @@
   .pipe-step[data-step="applied"].is-done { background: var(--ink); color: var(--paper); }
   .pipe-step[data-step="applied"].is-done .pipe-n { background: var(--paper); border-color: var(--paper); color: var(--ink); }
   .pipe-step.is-disabled { opacity: .45; pointer-events: none; }
+  /* Phones: the full-label pipeline is ~300px; give it the space it has, never more */
+  .pipe { max-width: 100%; }
+  @media (max-width: 420px) {
+    .pipe-step { padding: .25rem .4rem; gap: .25rem; font-size: .75rem; }
+  }
+  @media (max-width: 370px) { .pipe-n { display: none; } }
 
   .contact-row { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; font-size: .8125rem; }
   .contact-link {

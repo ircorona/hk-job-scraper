@@ -8,14 +8,15 @@ const cols = [
   { key: 'salary_num', label: 'Salary', cls: 'text-right' },
   { key: 'seniority', label: 'Level', cls: '' },
   { key: 'work_mode', label: 'Mode', cls: '' },
-  { key: 'match', label: 'Match', cls: 'text-right' },
-  { key: 'source', label: 'Source', cls: '' },
+  // Last column: Source moved under Posted and the pipeline under the title, so the
+  // table fits the page width (a 9th column pushed Applied off the right edge).
+  { key: 'match', label: 'Match', cls: 'text-right pr-4 rounded-tr-[10px]' },
 ];
 ---
 
 <div class="bg-surface border border-rule rounded-[10px] mb-10 md:mb-12">
-  <ul id="jobCards" role="list" class="md:hidden divide-y divide-rule"></ul>
-  <div id="tableWrap" class="hidden md:block overflow-x-auto">
+  <ul id="jobCards" role="list" class="lg:hidden divide-y divide-rule"></ul>
+  <div id="tableWrap" class="hidden lg:block overflow-x-auto">
     <table class="w-full text-sm">
       <caption class="sr-only">Hong Kong job ads. Column headers sort the list.</caption>
       <thead class="text-ink-2 select-none">
@@ -27,7 +28,6 @@ const cols = [
               </button>
             </th>
           ))}
-          <th scope="col" class={`${th} pr-4 rounded-tr-[10px]`}><span class="sr-only">Applied</span></th>
         </tr>
       </thead>
       <tbody id="jobTableBody" class="divide-y divide-rule"></tbody>

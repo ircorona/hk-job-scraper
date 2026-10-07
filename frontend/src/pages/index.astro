@@ -814,16 +814,15 @@ function renderTable() {
 
   $('jobTableBody').innerHTML = parts.map(function (p) {
     return '<tr class="align-top hover:bg-paper transition-colors' + (p.applied ? ' bg-well' : '') + '">'
-      + '<td class="pl-4 pr-3 py-3 whitespace-nowrap">' + p.posted + '</td>'
-      + '<td class="px-3 py-3 min-w-[15rem] leading-snug"><div>' + p.titleLink + '</div>'
-      +   ((p.chinese || p.ttps) ? '<div class="mt-1 flex flex-wrap gap-1">' + p.chinese + p.ttps + '</div>' : '') + '</td>'
-      + '<td class="px-3 py-3 min-w-[9rem] max-w-[14rem] text-ink-2 leading-snug">' + p.company + p.contacts + '</td>'
-      + '<td class="px-3 py-3 text-right num whitespace-nowrap">' + p.salHtml + '</td>'
+      + '<td class="pl-4 pr-3 py-3 whitespace-nowrap">' + p.posted + '<div class="mt-1 text-xs text-ink-3">' + p.source + '</div></td>'
+      + '<td class="px-3 py-3 min-w-[14rem] leading-snug"><div>' + p.titleLink + '</div>'
+      +   ((p.chinese || p.ttps) ? '<div class="mt-1 flex flex-wrap gap-1">' + p.chinese + p.ttps + '</div>' : '')
+      +   '<div class="mt-2">' + p.pipe + '</div></td>'
+      + '<td class="px-3 py-3 min-w-[8rem] max-w-[12rem] text-ink-2 leading-snug">' + p.company + p.contacts + '</td>'
+      + '<td class="px-3 py-3 text-right num max-w-[9.5rem]">' + p.salHtml + '</td>'
       + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.level + '</td>'
       + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.mode + '</td>'
-      + '<td class="px-3 py-3 text-right num text-ink">' + p.match + '</td>'
-      + '<td class="px-3 py-3 text-ink-3 whitespace-nowrap">' + p.source + '</td>'
-      + '<td class="pl-3 pr-4 py-2.5 text-right">' + p.pipe + '</td>'
+      + '<td class="pl-3 pr-4 py-3 text-right num text-ink">' + p.match + '</td>'
       + '</tr>';
   }).join('');
 
@@ -841,7 +840,7 @@ function renderTable() {
   }).join('');
 
   $('jobsEmpty').classList.toggle('hidden', total > 0);
-  $('tableWrap').classList.toggle('md:block', total > 0);
+  $('tableWrap').classList.toggle('lg:block', total > 0);
   var showing = total > 0 ? nf(start + 1) + ' to ' + nf(Math.min(start + PER_PAGE, total)) + ' of ' + nf(total) + ' jobs' : '0 jobs';
   $('tableInfo').textContent = showing;
   $('filterSummary').textContent = nf(total) + ' of ' + nf(ALL_JOBS.length) + ' match the filters';
