@@ -33,7 +33,7 @@ const base = import.meta.env.BASE_URL;
 
       <div class="max-w-6xl mx-auto px-4 md:px-6 pb-8">
         <div class="mb-6">
-          <h2 id="viewTitle" class="font-serif text-[1.75rem] md:text-[2.25rem] leading-[1.12] text-ink">All categories</h2>
+          <h2 id="viewTitle" style="scroll-margin-top: 1.5rem" class="font-serif text-[1.75rem] md:text-[2.25rem] leading-[1.12] text-ink">All categories</h2>
           <p id="viewSub" class="mt-1.5 text-sm text-ink-2 num"></p>
         </div>
 
@@ -771,7 +771,16 @@ async function downloadExcel() {
 // EVENTS
 // ==================================================================
 function wire() {
-  $('categoryForm').addEventListener('submit', function (e) { e.preventDefault(); if (JOBS.length) search(); });
+  // The results start ~1,700px below the button (under Apply first), so a bare
+  // re-render looked like the button did nothing. Take the user to them.
+  $('categoryForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (!JOBS.length) return;
+    search();
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    $('viewTitle').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  });
+  $('categorySelect').addEventListener('change', function () { if (JOBS.length) search(); });
   $('searchInput').addEventListener('input', function () { applyFilters(); });
   ['postedFilter', 'langFilter', 'newFilter', 'seniorityFilter', 'workModeFilter', 'sourceFilter', 'ttpsFilter'].forEach(function (id) {
     $(id).addEventListener('change', function () { applyFilters(); });
