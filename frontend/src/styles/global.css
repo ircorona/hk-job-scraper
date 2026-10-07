@@ -90,6 +90,14 @@
   .pipe-step[data-step="applied"].is-done .pipe-n { background: var(--paper); border-color: var(--paper); color: var(--ink); }
   .pipe-step.is-disabled { opacity: .45; pointer-events: none; }
 
+  .contact-row { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; font-size: .8125rem; }
+  .contact-link {
+    color: var(--ink); font-weight: 500; text-decoration: underline; text-decoration-color: var(--rule-strong);
+    text-underline-offset: 3px; white-space: nowrap;
+  }
+  .contact-link:hover { color: var(--accent-ink); text-decoration-color: var(--accent-ink); }
+  .contact-link::after { content: " \2197"; font-size: .75em; color: var(--ink-3); }
+
   .toast {
     position: fixed; left: 50%; bottom: 1.5rem; z-index: 50; max-width: min(92vw, 34rem);
     transform: translate(-50%, .5rem); opacity: 0; pointer-events: none;

@@ -183,6 +183,16 @@ All in `.env` (gitignored) and GitHub Secrets:
   Prints the top 15 with real apply URLs; `--csv path` writes them out. Never run in CI:
   the tracker is private.
 
+## Dashboard job pipeline (2026-10-08)
+- Every job: 1 Read JD (opens ad) -> 2 Customize (copies `/tailor-application title | company | url`)
+  -> 3 Applied (hides it, copies the `python funnel.py add ...` line). State is per-browser
+  localStorage (`hkjobs.stage.v1`, `hkjobs.applied.v1`); the tracker is the cross-device truth.
+- Find contact: LinkedIn people-search links, Hong Kong only (geoUrn 103291313), Recruiter +
+  Hiring manager (titles picked from the job title), or Agency consultant for staffing-agency
+  ads. Opens in his logged-in Premium session; we cannot search LinkedIn ourselves.
+- Frontend-only fixes can ship without the 55-min CI run: build, then curl-FTPS upload the new
+  `_assets/*.css` FIRST and `index.html` second (Python ftplib data channel timed out here).
+
 ## Funnel tracking (local only, 2026-10-08)
 - Goal: 3 interviews/month (was 3 in 6 months). Target 15 applications/week; at the
   measured ~4% application-to-interview rate that is the volume the goal needs.

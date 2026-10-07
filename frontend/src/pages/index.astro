@@ -200,6 +200,54 @@ function refreshPipes(id) {
     el.outerHTML = pipeHtml(j, el.getAttribute('data-compact') === '1');
   });
 }
+// ==================================================================
+// FIND A CONTACT (LinkedIn people search, opened in his own logged-in browser)
+// ==================================================================
+// LinkedIn's geo ID for Hong Kong: outreach rule 4 is "HK-verified only".
+var LI_PEOPLE = 'https://www.linkedin.com/search/results/people/?origin=FACETED_SEARCH&geoUrn=%5B%22103291313%22%5D&keywords=';
+// Staffing agencies post a large share of HK ads; their consultant IS the gatekeeper.
+var AGENCIES = /\b(hays|robert walters|michael page|page personnel|randstad|ikas|morgan mckinley|robert half|adecco|persol|teksystems|manpower|kelly services|links international|hudson|harvey nash|achieve|leadership solutions|newrecs|justonegalaxy|eteam|peoplebank|it solutions|recruit|search|consult(ing|ancy) limited|talent|staffing|headhunt)/i;
+function cleanCompany(c) {
+  // "Orient Overseas Container Line Ltd (OOCL)": people's profiles say "OOCL", so a
+  // short brand in brackets beats the legal name as the search phrase.
+  var brand = /\(([A-Za-z0-9&\s]{2,20})\)?\s*$/.exec(String(c || '').trim());
+  if (brand && !/^(asia|hong kong|hk|asia pacific)$/i.test(brand[1].trim())) return brand[1].trim();
+  return String(c || '')
+    .replace(/\((asia|hong kong|hk|asia pacific)\)/ig, ' ')
+    .replace(/\b(limited|ltd\.?|co\.?|company|hong kong|hk|holdings?|group|inc\.?|corporation)\b/ig, ' ')
+    .replace(/[,.|]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+// What the hiring manager is probably called, from the job title
+function teamTitles(title) {
+  var t = String(title || '').toLowerCase();
+  if (/seo|search engine|digital marketing/.test(t)) return '("head of seo" OR "seo manager" OR "head of digital" OR "digital marketing manager")';
+  if (/\bai\b|llm|agent|automation|machine learning|genai|generative/.test(t)) return '("head of ai" OR "ai lead" OR "head of data" OR "automation lead")';
+  if (/web|developer|frontend|full stack|engineer/.test(t)) return '("engineering manager" OR "head of engineering" OR "tech lead")';
+  if (/fraud|risk|aml|kyc|compliance|financial crime/.test(t)) return '("head of fraud" OR "fraud manager" OR "risk analytics" OR "head of risk")';
+  return '("head of data" OR "analytics manager" OR "head of analytics" OR "bi manager")';
+}
+function field(title) {
+  var t = String(title || '').toLowerCase();
+  if (/seo|digital marketing/.test(t)) return 'digital marketing';
+  if (/\bai\b|llm|agent|automation/.test(t)) return 'technology';
+  if (/web|developer|engineer/.test(t)) return 'technology';
+  return '(data OR analytics OR technology)';
+}
+function contactLinks(j, compact) {
+  var co = cleanCompany(j.company);
+  if (!co || /^confidential$/i.test(co) || /not given/i.test(co)) return '';
+  var agency = AGENCIES.test(j.company || '');
+  var qc = '"' + co.replace(/"/g, '') + '"';
+  var recruiterQ = agency ? qc + ' ' + field(j.title) + ' (consultant OR recruiter OR manager)'
+                          : qc + ' (recruiter OR "talent acquisition" OR "HR business partner")';
+  var hmQ = qc + ' ' + teamTitles(j.title);
+  var cls = 'contact-link';
+  var a1 = '<a class="' + cls + '" href="' + esc(LI_PEOPLE + encodeURIComponent(recruiterQ)) + '" target="_blank" rel="noopener noreferrer" title="LinkedIn people search, Hong Kong only">' + (agency ? 'Agency consultant' : 'Recruiter') + '</a>';
+  var a2 = agency ? '' : '<a class="' + cls + '" href="' + esc(LI_PEOPLE + encodeURIComponent(hmQ)) + '" target="_blank" rel="noopener noreferrer" title="LinkedIn people search, Hong Kong only">Hiring manager</a>';
+  if (compact) return '<div class="mt-1 flex flex-wrap gap-x-2 text-xs">' + a1 + a2 + '</div>';
+  return '<p class="contact-row"><span class="text-ink-3">Find contact on LinkedIn:</span> ' + a1 + a2 + '</p>';
+}
+
 function pipeHtml(j, compact) {
   var s = stageOf(j), applied = isApplied(j), url = safeUrl(j.url), title = esc(j.title);
   var done = { read: !!s.read || applied, custom: !!s.custom || applied, applied: applied };
@@ -412,7 +460,7 @@ function renderPicks() {
       +   (meta ? '<p class="mt-1 text-sm text-ink-2">' + meta + '</p>' : '')
       +   '<p class="mt-1 text-sm text-ink-3">' + esc(whyLine(j)) + '</p>'
       + '</div>'
-      + '<div class="col-start-2 md:col-start-auto md:pt-0.5">' + pipeHtml(j, false) + '</div>'
+      + '<div class="col-start-2 md:col-start-auto md:pt-0.5">' + pipeHtml(j, false) + contactLinks(j, false) + '</div>'
       + '</li>';
   }).join('');
 }
@@ -699,7 +747,8 @@ function jobParts(j) {
     posted: posted, chinese: chinese, ttps: ttps, salHtml: salHtml, salaryShort: salTxt,
     level: esc(j.seniority || ''), mode: esc(j.work_mode || ''),
     match: Number(j.match) || 0, source: esc(SRC_NAMES[j.source] || j.source || ''),
-    appliedBtn: appliedBtn, applied: applied, pipe: pipeHtml(j, true), pipeFull: pipeHtml(j, false)
+    appliedBtn: appliedBtn, applied: applied, pipe: pipeHtml(j, true), pipeFull: pipeHtml(j, false),
+    contacts: contactLinks(j, true), contactsFull: contactLinks(j, false)
   };
 }
 
@@ -768,7 +817,7 @@ function renderTable() {
       + '<td class="pl-4 pr-3 py-3 whitespace-nowrap">' + p.posted + '</td>'
       + '<td class="px-3 py-3 min-w-[15rem] leading-snug"><div>' + p.titleLink + '</div>'
       +   ((p.chinese || p.ttps) ? '<div class="mt-1 flex flex-wrap gap-1">' + p.chinese + p.ttps + '</div>' : '') + '</td>'
-      + '<td class="px-3 py-3 min-w-[9rem] max-w-[14rem] text-ink-2 leading-snug">' + p.company + '</td>'
+      + '<td class="px-3 py-3 min-w-[9rem] max-w-[14rem] text-ink-2 leading-snug">' + p.company + p.contacts + '</td>'
       + '<td class="px-3 py-3 text-right num whitespace-nowrap">' + p.salHtml + '</td>'
       + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.level + '</td>'
       + '<td class="px-3 py-3 text-ink-2 whitespace-nowrap">' + p.mode + '</td>'
@@ -788,7 +837,7 @@ function renderTable() {
       + '<p class="text-sm mt-2 num">' + p.salHtml + '</p>'
       + ((p.chinese || p.ttps) ? '<div class="flex flex-wrap gap-1.5 mt-2">' + p.chinese + p.ttps + '</div>' : '')
       + '<p class="text-sm text-ink-2 mt-2">' + meta + '</p>'
-      + '<div class="mt-3">' + p.pipeFull + '</div></li>';
+      + '<div class="mt-3">' + p.pipeFull + p.contactsFull + '</div></li>';
   }).join('');
 
   $('jobsEmpty').classList.toggle('hidden', total > 0);
