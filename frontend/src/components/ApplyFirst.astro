@@ -1,16 +1,29 @@
 ---
 // "Apply first": up to 8 fresh, reachable picks across ALL categories, ranked in index.astro (rankPicks).
+// Applied jobs drop out and the next best one takes the slot. Header shows the weekly goal (15).
 ---
 
 <section id="applyFirst" class="max-w-6xl mx-auto px-4 md:px-6 mb-10 md:mb-12" aria-labelledby="applyFirstTitle">
-  <div class="bg-surface border border-rule rounded-[10px]">
-    <div class="px-4 md:px-6 pt-5 md:pt-6 pb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-1 md:gap-6 border-b border-rule">
+  <div class="bg-surface border border-rule rounded-[10px] overflow-hidden">
+    <div class="px-4 md:px-6 pt-5 md:pt-6 pb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-3 md:gap-6 border-b border-rule">
       <div>
         <h2 id="applyFirstTitle" class="font-serif text-2xl md:text-[1.75rem] leading-tight text-ink">Apply first</h2>
         <p id="applyFirstSub" class="mt-1.5 text-sm text-ink-2">Posted in the last 4 days, no Chinese requirement, below manager level, no data engineering or data science, ranked by fit with a data analyst profile.</p>
       </div>
-      <p id="applyFirstCount" class="text-sm text-ink-3 num md:text-right shrink-0"></p>
+      <div class="shrink-0 md:w-56">
+        <div id="weekGoal" class="text-sm" title="Counted from the Applied marks in this browser. tracker.csv (funnel.py) is the full record.">
+          <p class="flex items-baseline justify-between gap-3">
+            <span class="text-ink-2">Applied this week</span>
+            <span class="num font-semibold text-ink goal-num"><span id="weekGoalN">0</span> / 15</span>
+          </p>
+          <div class="goal-bar mt-1.5" role="progressbar" aria-label="Applications this week" aria-valuemin="0" aria-valuemax="15" aria-valuenow="0" id="weekGoalBar">
+            <div class="goal-fill" id="weekGoalFill" style="width:0%"></div>
+          </div>
+        </div>
+        <p id="applyFirstCount" class="mt-2 text-sm text-ink-3 num md:text-right"></p>
+      </div>
     </div>
+    <p id="continueLine" class="hidden px-4 md:px-6 py-3 text-sm text-ink border-b border-rule bg-accent-tint"></p>
     <ol id="picksList" class="divide-y divide-rule" aria-describedby="applyFirstSub"></ol>
     <p id="picksEmpty" class="hidden px-4 md:px-6 py-6 text-sm text-ink-2">Nothing new fits right now. Every fresh ad either needs Chinese, sits at manager level or is already marked applied.</p>
   </div>

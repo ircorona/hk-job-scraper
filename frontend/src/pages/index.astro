@@ -52,7 +52,7 @@ const base = import.meta.env.BASE_URL;
       </div>
     </div>
     <p id="appliedStatus" class="sr-only" role="status" aria-live="polite"></p>
-    <p id="toast" class="toast" aria-hidden="true"></p>
+    <div id="toast" class="toast" aria-hidden="true"><span id="toastMsg" class="toast-msg"></span><button type="button" id="toastAction" class="toast-action hidden">Undo</button></div>
   </main>
 
   <Footer />
@@ -68,7 +68,11 @@ var BY_KEY = {};        // job key -> job
 var CAT_JOBS = {};      // category label -> unique jobs in that category
 var ALL_JOBS = [];      // jobs of the selected category (or all)
 var FILTERED = [], PAGE = 1, PER_PAGE = 25;
-var SORT_KEY = 'date', SORT_ASC = false, charts = {}, SHOW_APPLIED = false;
+var SORT_KEY = 'date', SORT_ASC = false, charts = {};
+var TAB = 'todo';       // job list tab: todo | progress | applied | removed
+var TODO_N = 0;         // To apply count under the current filters
+var WEEK_GOAL = 15;     // applications per week (funnel.py target)
+var MOVE_DELAY = 1500;  // ms a job stays in place, tinted, before it moves to its new tab
 var TODAY_HK = hkDate(new Date()), LATEST_RUN = TODAY_HK, UPDATED_TEXT = '';
 var DB = base + (base.endsWith('/') ? '' : '/') + 'data/';
 
@@ -119,6 +123,21 @@ function saveApplied() {
 }
 function isApplied(j) { return Object.prototype.hasOwnProperty.call(APPLIED, j._k); }
 
+// Removed ("not for me"): hidden from Apply first, To apply and In progress; the
+// Removed tab can restore it. Same per-browser storage rules as APPLIED.
+var REMOVED_KEY = 'hkjobs.removed.v1', REMOVED = {};
+function loadRemoved() {
+  try {
+    var raw = window.localStorage.getItem(REMOVED_KEY);
+    var o = raw ? JSON.parse(raw) : {};
+    if (o && typeof o === 'object' && !Array.isArray(o)) REMOVED = o;
+  } catch (e) { REMOVED = {}; }
+}
+function saveRemoved() {
+  try { window.localStorage.setItem(REMOVED_KEY, JSON.stringify(REMOVED)); } catch (e) {}
+}
+function isRemoved(j) { return Object.prototype.hasOwnProperty.call(REMOVED, j._k); }
+
 // Pipeline per job: 1 Read JD -> 2 Customize -> 3 Applied. Steps 1-2 live here,
 // step 3 is APPLIED above (kept separate so existing applied marks survive).
 var STAGE_KEY = 'hkjobs.stage.v1', STAGE = {};
@@ -137,15 +156,88 @@ function markStep(j, step) {
   var s = STAGE[j._k] || (STAGE[j._k] = {});
   if (!s[step]) { s[step] = TODAY_HK; saveStage(); }
 }
+function resetStage(j) { delete STAGE[j._k]; saveStage(); }
 
-var toastTimer = null;
-function toast(msg, ms) {
-  var t = $('toast');
-  t.textContent = msg; t.classList.add('show');
+// Status drives the tabs and the colours: todo (untouched), progress (read or customized), applied
+function statusOf(j) {
+  if (isApplied(j)) return 'applied';
+  if (isRemoved(j)) return 'removed';
+  var s = stageOf(j);
+  return (s.read || s.custom) ? 'progress' : 'todo';
+}
+function appliedOn(j) { var d = APPLIED[j._k]; return typeof d === 'string' ? d : ''; }
+// Date of the last thing done on a job (applied, customized or read); '' if none
+function activityOf(j) {
+  if (isApplied(j)) return appliedOn(j);
+  if (isRemoved(j)) return typeof REMOVED[j._k] === 'string' ? REMOVED[j._k] : '';
+  var s = stageOf(j);
+  return [s.custom || '', s.read || ''].sort().pop();
+}
+// Full class names spelled out: Tailwind purges classes it cannot find in the source.
+var ROW_CLS = { none: 'st-row-none', read: 'st-row-read', custom: 'st-row-custom', applied: 'st-row-applied', removed: 'st-row-removed' };
+function rowState(j) {
+  if (isApplied(j)) return 'applied';
+  if (isRemoved(j)) return 'removed';
+  var s = stageOf(j);
+  return s.custom ? 'custom' : s.read ? 'read' : 'none';
+}
+function rowCls(j) { return ROW_CLS[rowState(j)]; }
+
+function addDays(day, n) { return new Date(Date.parse(day) + n * 86400e3).toISOString().slice(0, 10); }
+function daysSince(day) { return day ? Math.round((Date.parse(TODAY_HK) - Date.parse(day)) / 86400e3) : null; }
+function fmtDay(day) {
+  if (!day) return '';
+  return new Date(Date.parse(day)).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+function relDay(day) {
+  var n = daysSince(day);
+  if (n === null) return '';
+  if (n <= 0) return 'today';
+  if (n === 1) return 'yesterday';
+  return n + ' days ago';
+}
+
+// The coloured status line under a job's title. Always rendered (empty for untouched jobs)
+// so a click can swap it in place.
+function statusHtml(j) {
+  var st = rowState(j), inner = '', id = j._id;
+  if (st === 'applied') {
+    var on = appliedOn(j);
+    inner = '<span class="st-chip st-chip-applied"><span aria-hidden="true">&#10003;</span> Applied' + (on ? ' ' + esc(fmtDay(on)) : '') + '</span>';
+    if (on) {
+      var fu = addDays(on, 7);
+      inner += fu <= TODAY_HK
+        ? '<span class="st-chip st-chip-due" title="Outreach rule: one follow-up at day 7, only if no reply">Follow-up due ' + esc(fmtDay(fu)) + '</span>'
+        : '<span class="st-note">Follow up ' + esc(fmtDay(fu)) + ' if no reply</span>';
+    }
+  } else if (st === 'removed') {
+    var rd = REMOVED[j._k];
+    inner = '<span class="st-chip st-chip-removed">Removed' + (typeof rd === 'string' ? ' ' + esc(fmtDay(rd)) : '') + '</span>';
+  } else if (st !== 'none') {
+    var s = stageOf(j), since = st === 'custom' ? s.custom : s.read, age = daysSince(since);
+    inner = st === 'custom'
+      ? '<span class="st-chip st-chip-custom">Customizing</span>'
+      : '<span class="st-chip st-chip-read">JD read</span>';
+    inner += '<span class="st-note' + (age >= 2 ? ' font-semibold text-accent-deep' : '') + '">' +
+      (st === 'custom' ? 'customized ' : 'read ') + esc(relDay(since)) + '</span>';
+    inner += '<button type="button" class="st-reset" data-reset="' + id + '" aria-label="Move back to To apply: ' + esc(j.title) + '">Reset</button>';
+  }
+  return '<span class="st-line" data-status="' + id + '">' + inner + '</span>';
+}
+
+var toastTimer = null, toastUndo = null;
+function toast(msg, ms, undo) {
+  var t = $('toast'), btn = $('toastAction');
+  $('toastMsg').textContent = msg;
+  toastUndo = undo || null;
+  btn.classList.toggle('hidden', !undo);
+  t.setAttribute('aria-hidden', undo ? 'false' : 'true');
+  t.classList.add('show');
   $('appliedStatus').textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(function () { t.classList.remove('show'); }, ms || 3200);
+  toastTimer = setTimeout(function () { t.classList.remove('show'); toastUndo = null; }, ms || (undo ? 7000 : 3200));
 }
+function hideToast() { clearTimeout(toastTimer); $('toast').classList.remove('show'); toastUndo = null; }
 function copyText(text) {
   try {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return fallbackCopy(text); });
@@ -174,31 +266,91 @@ function onStep(step, id) {
   var j = JOBS[id]; if (!j) return;
   if (step === 'read') {
     markStep(j, 'read');
-    toast('Step 1 done: reading ' + (j.title || 'the ad') + '. Next: Customize.');
+    toast('Step 1 done: reading ' + (j.title || 'the ad') + '. It is now In progress. Next: Customize.');
     // After the click finishes: swapping the link out mid-click can cancel the navigation
-    setTimeout(function () { refreshPipes(id); }, 0);
+    setTimeout(function () { refreshJob(id); }, 0);
   } else if (step === 'custom') {
     markStep(j, 'read'); markStep(j, 'custom');
     copyText(tailorText(j)).then(function (ok) {
       toast(ok ? 'Copied the tailoring request. Paste it into Claude Code.' : 'Could not copy. Tailor: ' + tailorText(j), ok ? 0 : 10000);
     });
-    refreshPipes(id);
+    refreshJob(id);
   } else if (step === 'applied') {
-    var wasApplied = isApplied(j);
-    toggleApplied(id);
-    if (!wasApplied) {
+    if (!isApplied(j)) {
+      setApplied(j, TODAY_HK);
       copyText(funnelText(j)).then(function (ok) {
-        toast(ok ? 'Applied. Copied the funnel.py line: paste it in a terminal to log it.' : 'Applied. Log it: ' + funnelText(j), ok ? 0 : 10000);
+        toast(ok ? 'Moved to Applied. funnel.py line copied: paste it in a terminal to log it.' : 'Moved to Applied. Log it: ' + funnelText(j),
+          ok ? 0 : 12000, function () { setApplied(j, null); toast('Undone. Back where it was.'); });
       });
-    } else toast('Unmarked as applied.');
+    } else {
+      var was = appliedOn(j);
+      setApplied(j, null);
+      toast('Unmarked as applied.', 0, function () { setApplied(j, was || TODAY_HK); toast('Undone. Marked applied again.'); });
+    }
   }
 }
-// Re-render only the step states for one job, so the list does not jump while reading.
-function refreshPipes(id) {
+function setRemoved(j, day) {
+  if (day) REMOVED[j._k] = day; else delete REMOVED[j._k];
+  saveRemoved();
+  $('appliedStatus').textContent = (day ? 'Removed: ' : 'Restored: ') + (j.title || '');
+  refreshJob(j._id);
+  scheduleMove(j._id);
+}
+function onRemove(id) {
+  var j = JOBS[id]; if (!j || isApplied(j)) return;
+  if (!isRemoved(j)) {
+    setRemoved(j, TODAY_HK);
+    toast('Removed. It will not show up again.', 0, function () { setRemoved(j, null); toast('Undone. Back where it was.'); });
+  } else {
+    var was = REMOVED[j._k];
+    setRemoved(j, null);
+    toast('Restored.', 0, function () { setRemoved(j, was || TODAY_HK); toast('Undone. Removed again.'); });
+  }
+}
+function setApplied(j, day) {
+  if (day) APPLIED[j._k] = day; else delete APPLIED[j._k];
+  if (day && isRemoved(j)) { delete REMOVED[j._k]; saveRemoved(); }
+  saveApplied();
+  $('appliedStatus').textContent = (day ? 'Marked as applied: ' : 'Unmarked: ') + (j.title || '');
+  refreshJob(j._id);
+  scheduleMove(j._id);
+}
+// Re-render one job in place (steps, status line, colour) so the list does not jump while
+// working on it. Counts and the weekly goal update at once.
+function refreshJob(id) {
   var j = JOBS[id]; if (!j) return;
   document.querySelectorAll('[data-pipe="' + id + '"]').forEach(function (el) {
     el.outerHTML = pipeHtml(j, el.getAttribute('data-compact') === '1');
   });
+  document.querySelectorAll('[data-status="' + id + '"]').forEach(function (el) { el.outerHTML = statusHtml(j); });
+  var cls = rowCls(j);
+  document.querySelectorAll('[data-row="' + id + '"]').forEach(function (el) {
+    Object.keys(ROW_CLS).forEach(function (k) { el.classList.remove(ROW_CLS[k]); });
+    el.classList.add(cls);
+  });
+  renderCounts();
+}
+// The job stays visible (now tinted) for a moment, then the lists re-render and it moves
+// to its new tab; Apply first refills to 8. One timer for any burst of clicks.
+var moveTimer = null, moveIds = {};
+function scheduleMove(id) {
+  moveIds[id] = 1;
+  clearTimeout(moveTimer);
+  moveTimer = setTimeout(settleMoves, REDUCED_MOTION ? 600 : MOVE_DELAY);
+}
+function settleMoves() {
+  moveTimer = null;
+  var ids = Object.keys(moveIds); moveIds = {};
+  // Was keyboard focus on one of the moving jobs? Then keep it somewhere sensible.
+  var act = document.activeElement, focusId = null;
+  ids.forEach(function (id) { if (act && act.closest && act.closest('[data-row="' + id + '"]')) focusId = id; });
+  renderPicks();
+  applyFilters(true);
+  if (focusId !== null) {
+    var again = document.querySelector('[data-step="applied"][data-id="' + focusId + '"]');
+    if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
+    else { var tab = document.querySelector('.tab[data-tab="' + statusOf(JOBS[focusId]) + '"]'); if (tab) tab.focus({ preventScroll: true }); }
+  }
 }
 // ==================================================================
 // FIND A CONTACT (LinkedIn people search, opened in his own logged-in browser)
@@ -264,26 +416,125 @@ function pipeHtml(j, compact) {
   var read = url !== '#'
     ? '<a class="' + cls('read') + '" href="' + url + '" target="_blank" rel="noopener noreferrer" data-step="read" data-id="' + j._id + '" aria-label="Step 1, read the job description: ' + title + '">' + lab(1, 'Read JD', 'Read') + '</a>'
     : '<span class="' + cls('read') + ' is-disabled">' + lab(1, 'Read JD', 'Read') + '</span>';
-  return '<div class="pipe" role="group" aria-label="Pipeline: ' + title + '" data-pipe="' + j._id + '" data-compact="' + (compact ? 1 : 0) + '">'
+  // Remove ("not for me") sits beside the steps; a removed job offers Restore instead.
+  // Applied jobs get neither: unmark Applied first.
+  var rm = applied ? ''
+    : isRemoved(j)
+      ? '<button type="button" class="rm-btn" data-remove="' + j._id + '" aria-label="Restore: ' + title + '">Restore</button>'
+      : '<button type="button" class="rm-btn" data-remove="' + j._id + '" aria-label="Remove, not for me: ' + title + '" title="Not for me: hide this job from every list"><span aria-hidden="true">&times;</span> Remove</button>';
+  return '<div class="pipe-wrap" data-pipe="' + j._id + '" data-compact="' + (compact ? 1 : 0) + '">'
+    + '<div class="pipe" role="group" aria-label="Pipeline: ' + title + '">'
     + read
     + '<button type="button" class="' + cls('custom') + '" data-step="custom" data-id="' + j._id + '" aria-label="Step 2, customize the resume: copy the tailoring request for ' + title + '">' + lab(2, 'Customize', 'Tailor') + '</button>'
     + '<button type="button" class="' + cls('applied') + '" data-step="applied" data-id="' + j._id + '" aria-pressed="' + applied + '" aria-label="Step 3, ' + (applied ? 'applied, click to undo: ' : 'mark applied: ') + title + '">' + lab(3, 'Applied', 'Applied') + '</button>'
-    + '</div>';
+    + '</div>' + rm + '</div>';
 }
-function toggleApplied(id) {
-  var j = JOBS[id]; if (!j) return;
-  var now;
-  if (isApplied(j)) { delete APPLIED[j._k]; now = false; }
-  else { APPLIED[j._k] = TODAY_HK; now = true; }
-  saveApplied();
-  $('appliedStatus').textContent = (now ? 'Marked as applied: ' : 'Unmarked: ') + (j.title || '') +
-    (now && !SHOW_APPLIED ? '. Hidden from the list; use Show applied to see it.' : '');
-  renderPicks();
-  applyFilters(true);
-  // Keep keyboard focus on the same job's button if it is still on screen
-  var again = document.querySelector('[data-step="applied"][data-id="' + id + '"]');
-  if (again && again.offsetParent !== null) again.focus({ preventScroll: true });
-  else $('showAppliedBtn').focus({ preventScroll: true });
+// ==================================================================
+// COUNTS, WEEKLY GOAL, CONTINUE LINE
+// ==================================================================
+// HK week starts Monday
+function weekStart() {
+  var dow = new Date(Date.parse(TODAY_HK)).getUTCDay();
+  return addDays(TODAY_HK, -((dow + 6) % 7));
+}
+function renderCounts() {
+  var prog = [], appN = 0, rmN = 0;
+  JOBS.forEach(function (j) {
+    var st = statusOf(j);
+    if (st === 'progress') prog.push(j); else if (st === 'applied') appN++; else if (st === 'removed') rmN++;
+  });
+  setTabN('progress', prog.length);
+  setTabN('applied', appN);
+  setTabN('removed', rmN);
+  setTabN('todo', TODO_N);
+
+  // Weekly goal: every Applied mark dated this week, including jobs no longer in the data
+  var from = weekStart(), week = 0;
+  Object.keys(APPLIED).forEach(function (k) { var d = APPLIED[k]; if (typeof d === 'string' && d >= from && d <= TODAY_HK) week++; });
+  $('weekGoalN').textContent = week;
+  $('weekGoalFill').style.width = Math.min(100, week / WEEK_GOAL * 100) + '%';
+  $('weekGoalBar').setAttribute('aria-valuenow', String(week));
+  $('weekGoal').classList.toggle('goal-met', week >= WEEK_GOAL);
+
+  // Coming back the next day: point at the unfinished ones first
+  var line = $('continueLine');
+  if (prog.length) {
+    var oldest = prog.map(activityOf).filter(Boolean).sort()[0];
+    line.innerHTML = '<strong>' + prog.length + ' in progress</strong>' +
+      (oldest && daysSince(oldest) > 0 ? ', the oldest touched ' + esc(relDay(oldest)) : '') +
+      '. <a href="#jobs" id="continueLink" class="font-semibold text-accent-deep underline underline-offset-2">Finish them first</a>';
+  }
+  line.classList.toggle('hidden', !prog.length);
+}
+function setTabN(tab, n) {
+  var el = $('tabN-' + tab);
+  el.textContent = nf(n);
+  el.classList.toggle('has', n > 0);
+}
+function setTab(tab) {
+  TAB = tab;
+  document.querySelectorAll('.tab[data-tab]').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(b.getAttribute('data-tab') === tab));
+  });
+  // Filters only narrow To apply; the other tabs are a full status list
+  // Inline style: the hidden class loses to md:flex on desktop
+  $('filtersMain').style.display = tab === 'todo' ? '' : 'none';
+  $('filtersMore').style.display = tab === 'todo' ? '' : 'none';
+  $('backupRow').classList.toggle('hidden', tab === 'todo');
+  applyFilters();
+}
+
+// ==================================================================
+// BACK UP / RESTORE the marks (they live in this browser only)
+// ==================================================================
+function backupMarks() {
+  var data = { app: 'hk-jobs', version: 1, exported: TODAY_HK, applied: APPLIED, stage: STAGE, removed: REMOVED };
+  try {
+    var blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'hkjobs-marks-' + TODAY_HK + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast('Saved ' + Object.keys(APPLIED).length + ' applied and ' + Object.keys(STAGE).length + ' started jobs to a file.');
+  } catch (e) { toast('Could not create the backup file.'); }
+}
+function restoreMarks(file) {
+  var r = new FileReader();
+  r.onload = function () {
+    var d;
+    try { d = JSON.parse(String(r.result)); } catch (e) { toast('That file is not a marks backup.'); return; }
+    if (!d || d.app !== 'hk-jobs' || typeof d.applied !== 'object' || typeof d.stage !== 'object' || !d.applied || !d.stage) {
+      toast('That file is not a marks backup.'); return;
+    }
+    // Merge, never overwrite: keep the earliest date for anything marked in both places
+    var added = 0;
+    Object.keys(d.applied).forEach(function (k) {
+      var v = d.applied[k]; if (typeof v !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(v)) return;
+      if (!APPLIED[k]) added++;
+      if (!APPLIED[k] || v < APPLIED[k]) APPLIED[k] = v;
+    });
+    Object.keys(d.stage).forEach(function (k) {
+      var s = d.stage[k]; if (!s || typeof s !== 'object') return;
+      var cur = STAGE[k] || (STAGE[k] = {});
+      ['read', 'custom'].forEach(function (step) {
+        var v = s[step]; if (typeof v !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(v)) return;
+        if (!cur[step] || v < cur[step]) cur[step] = v;
+      });
+      if (!cur.read && !cur.custom) delete STAGE[k];
+    });
+    // Backups made before Remove existed have no "removed" key
+    if (d.removed && typeof d.removed === 'object') {
+      Object.keys(d.removed).forEach(function (k) {
+        var v = d.removed[k]; if (typeof v !== 'string' || !/^\d{4}-\d\d-\d\d$/.test(v) || APPLIED[k]) return;
+        if (!REMOVED[k] || v < REMOVED[k]) REMOVED[k] = v;
+      });
+    }
+    saveApplied(); saveStage(); saveRemoved();
+    renderPicks(); applyFilters(true);
+    toast('Restored. ' + added + ' applied jobs added from the backup.');
+  };
+  r.onerror = function () { toast('Could not read that file.'); };
+  r.readAsText(file);
 }
 
 // ==================================================================
@@ -321,7 +572,7 @@ function safeUrl(u) {
 // LOAD
 // ==================================================================
 async function init() {
-  loadApplied(); loadStage();
+  loadApplied(); loadStage(); loadRemoved();
   try {
     INDEX = await (await fetch(DB + 'index.json', { cache: 'no-cache' })).json();
   } catch (e) { showErr('Could not load the job data. Try again in a minute.'); return; }
@@ -379,6 +630,8 @@ async function init() {
   setupChartDefaults();
   renderPicks();
   search();
+  // Coming back the next day: open on the unfinished jobs
+  if (JOBS.some(function (j) { return statusOf(j) === 'progress'; })) setTab('progress');
   $('loading').classList.add('hidden');
   $('content').classList.remove('hidden');
 }
@@ -402,7 +655,8 @@ function search() {
   renderFigures();
   renderCharts();
   PAGE = 1;
-  applyFilters();
+  // A category is a request to browse: show its To apply list
+  if (TAB !== 'todo') setTab('todo'); else applyFilters();
 }
 
 // ==================================================================
@@ -415,7 +669,7 @@ function rankPicks() {
     if (a === null || a > 3) return;
     if (j.mandarin === 'Required') return;
     if (j.seniority === 'Director+' || j.seniority === 'Manager') return;
-    if (isApplied(j)) return;
+    if (isApplied(j) || isRemoved(j)) return;
     // Data science and data engineering stay out of the picks: DE is ~10% of applications
     // by choice (degree + Spark/Databricks gaps), browse it in the Data Engineer category.
     if (/data scientist|research scientist|data engineer|data engineering|data platform|etl developer/i.test(j.title || '')) return;
@@ -456,10 +710,11 @@ function renderPicks() {
   $('picksList').innerHTML = picks.map(function (j, i) {
     var p = jobParts(j);
     var meta = [p.salaryShort, p.level, p.mode].filter(Boolean).join(sep);
-    return '<li class="px-4 md:px-6 py-4 grid grid-cols-[1.75rem_1fr] md:grid-cols-[2.5rem_1fr_auto] gap-x-3 md:gap-x-4 gap-y-2 items-start">'
+    return '<li data-row="' + j._id + '" class="' + rowCls(j) + ' px-4 md:px-6 py-4 grid grid-cols-[1.75rem_1fr] md:grid-cols-[2.5rem_1fr_auto] gap-x-3 md:gap-x-4 gap-y-2 items-start">'
       + '<span class="font-serif text-2xl leading-none text-accent-ink num pt-0.5" aria-hidden="true">' + (i + 1) + '</span>'
       + '<div class="min-w-0">'
       +   '<p class="text-[0.9375rem] md:text-base leading-snug">' + p.titleLink + '</p>'
+      +   p.status
       +   '<p class="mt-0.5 text-sm text-ink-2">' + p.company + sep + p.posted + '</p>'
       +   (meta ? '<p class="mt-1 text-sm text-ink-2">' + meta + '</p>' : '')
       +   '<p class="mt-1 text-sm text-ink-3">' + esc(whyLine(j)) + '</p>'
@@ -752,6 +1007,7 @@ function jobParts(j) {
     level: esc(j.seniority || ''), mode: esc(j.work_mode || ''),
     match: Number(j.match) || 0, source: esc(SRC_NAMES[j.source] || j.source || ''),
     appliedBtn: appliedBtn, applied: applied, pipe: pipeHtml(j, true), pipeFull: pipeHtml(j, false),
+    id: j._id, rowCls: rowCls(j), status: statusHtml(j),
     contacts: contactLinks(j, true), contactsFull: contactLinks(j, false)
   };
 }
@@ -769,25 +1025,43 @@ function applyFilters(keepPage) {
   var lang = $('langFilter').value;
   var onlyNew = $('newFilter').checked;
 
-  var appliedHere = 0;
-  ALL_JOBS.forEach(function (j) { if (isApplied(j)) appliedHere++; });
-  $('appliedCount').textContent = nf(appliedHere);
-
-  FILTERED = ALL_JOBS.filter(function (j) {
-    if (!SHOW_APPLIED && isApplied(j)) return false;
+  function matchesQ(j) {
+    return !q || String(j.title || '').toLowerCase().indexOf(q) !== -1 || String(j.company || '').toLowerCase().indexOf(q) !== -1;
+  }
+  // To apply is computed on every call, so its tab count is right whichever tab is open
+  var todo = ALL_JOBS.filter(function (j) {
+    if (statusOf(j) !== 'todo') return false;
     if (posted) { var a = ageDays(j); if (a === null || a >= Number(posted)) return false; }
     if (lang === 'no-req' && j.mandarin === 'Required') return false;
     if (lang === 'none' && j.mandarin) return false;
     if (onlyNew && !isNew(j)) return false;
-    if (q && String(j.title || '').toLowerCase().indexOf(q) === -1 && String(j.company || '').toLowerCase().indexOf(q) === -1) return false;
+    if (!matchesQ(j)) return false;
     if (sen && j.seniority !== sen) return false;
     if (wm && j.work_mode !== wm) return false;
     if (src && j.source !== src) return false;
     if (ttps && !j.ttps) return false;
     return true;
   });
+  TODO_N = todo.length;
 
-  FILTERED.sort(function (a, b) {
+  if (TAB === 'todo') {
+    FILTERED = todo;
+    FILTERED.sort(compareJobs);
+  } else {
+    // In progress, Applied, Removed: every job with that status, all categories, search only
+    FILTERED = JOBS.filter(function (j) { return statusOf(j) === TAB && matchesQ(j); });
+    FILTERED.sort(function (a, b) {
+      if (SORT_KEY !== 'date') return compareJobs(a, b);
+      var va = activityOf(a), vb = activityOf(b);
+      return (SORT_ASC ? va.localeCompare(vb) : vb.localeCompare(va)) || String(a.title).localeCompare(String(b.title));
+    });
+  }
+
+  if (!keepPage) PAGE = 1;
+  renderTable();
+}
+
+function compareJobs(a, b) {
     var va = a[SORT_KEY], vb = b[SORT_KEY];
     if (SORT_KEY === 'date') {
       va = va || ''; vb = vb || '';
@@ -802,10 +1076,6 @@ function applyFilters(keepPage) {
     va = String(va || '').toLowerCase(); vb = String(vb || '').toLowerCase();
     if (!va || !vb) return (vb ? 1 : 0) - (va ? 1 : 0);
     return SORT_ASC ? va.localeCompare(vb) : vb.localeCompare(va);
-  });
-
-  if (!keepPage) PAGE = 1;
-  renderTable();
 }
 
 function renderTable() {
@@ -817,9 +1087,9 @@ function renderTable() {
   var parts = page.map(jobParts);
 
   $('jobTableBody').innerHTML = parts.map(function (p) {
-    return '<tr class="align-top hover:bg-paper transition-colors' + (p.applied ? ' bg-well' : '') + '">'
+    return '<tr data-row="' + p.id + '" class="' + p.rowCls + ' align-top hover:bg-paper transition-colors">'
       + '<td class="pl-4 pr-3 py-3 whitespace-nowrap">' + p.posted + '<div class="mt-1 text-xs text-ink-3">' + p.source + '</div></td>'
-      + '<td class="px-3 py-3 min-w-[14rem] leading-snug"><div>' + p.titleLink + '</div>'
+      + '<td class="px-3 py-3 min-w-[14rem] leading-snug"><div>' + p.titleLink + '</div>' + p.status
       +   ((p.chinese || p.ttps) ? '<div class="mt-1 flex flex-wrap gap-1">' + p.chinese + p.ttps + '</div>' : '')
       +   '<div class="mt-2">' + p.pipe + '</div></td>'
       + '<td class="px-3 py-3 min-w-[8rem] max-w-[12rem] text-ink-2 leading-snug">' + p.company + p.contacts + '</td>'
@@ -833,9 +1103,9 @@ function renderTable() {
   var sep = '<span aria-hidden="true" class="text-rule-strong px-1">|</span>';
   $('jobCards').innerHTML = parts.map(function (p) {
     var meta = [p.level, p.mode, p.source, '<span class="num">Match ' + p.match + '</span>'].filter(Boolean).join(sep);
-    return '<li class="px-4 py-4' + (p.applied ? ' bg-well' : '') + '">'
+    return '<li data-row="' + p.id + '" class="' + p.rowCls + ' px-4 py-4">'
       + '<p class="text-sm text-ink-2">' + p.posted + '</p>'
-      + '<p class="mt-1 text-[0.9375rem] leading-snug">' + p.titleLink + '</p>'
+      + '<p class="mt-1 text-[0.9375rem] leading-snug">' + p.titleLink + '</p>' + p.status
       + '<p class="text-sm text-ink-2 mt-0.5">' + p.company + '</p>'
       + '<p class="text-sm mt-2 num">' + p.salHtml + '</p>'
       + ((p.chinese || p.ttps) ? '<div class="flex flex-wrap gap-1.5 mt-2">' + p.chinese + p.ttps + '</div>' : '')
@@ -843,11 +1113,34 @@ function renderTable() {
       + '<div class="mt-3">' + p.pipeFull + p.contactsFull + '</div></li>';
   }).join('');
 
+  $('jobsEmpty').textContent = TAB === 'progress'
+    ? 'Nothing in progress. Open a job description from To apply and it shows up here.'
+    : TAB === 'applied'
+      ? 'No applications marked in this browser yet. Click 3 Applied on a job once you have sent it.'
+      : TAB === 'removed'
+        ? 'Nothing removed. Use Remove on a job that is not for you and it disappears from the lists.'
+        : 'No jobs match these filters. Try a wider posted window or "Any language".';
   $('jobsEmpty').classList.toggle('hidden', total > 0);
   $('tableWrap').classList.toggle('lg:block', total > 0);
   var showing = total > 0 ? nf(start + 1) + ' to ' + nf(Math.min(start + PER_PAGE, total)) + ' of ' + nf(total) + ' jobs' : '0 jobs';
   $('tableInfo').textContent = showing;
-  $('filterSummary').textContent = nf(total) + ' of ' + nf(ALL_JOBS.length) + ' match the filters';
+  if (TAB === 'todo') {
+    $('filterSummary').textContent = nf(total) + ' of ' + nf(ALL_JOBS.length) + ' match the filters';
+    $('tabNote').textContent = '';
+  } else {
+    $('filterSummary').textContent = '';
+    var note = TAB === 'progress'
+      ? 'Read or customized, not applied yet. All categories, last touched first.'
+      : TAB === 'removed'
+        ? 'Not for you: hidden from Apply first and the other tabs. Restore puts one back.'
+        : 'All categories, most recent first. Follow up once at day 7 if there is no reply.';
+    if (TAB === 'applied') {
+      var gone = Object.keys(APPLIED).filter(function (k) { return !BY_KEY[k]; }).length;
+      if (gone) note += ' ' + nf(gone) + ' earlier ' + (gone === 1 ? 'application is' : 'applications are') + ' not listed because the ad has left the data.';
+    }
+    $('tabNote').textContent = note;
+  }
+  renderCounts();
   $('jumpCount').textContent = nf(total);
   $('pageInfo').textContent = 'Page ' + PAGE + ' of ' + totalPages;
   $('prevPageBtn').disabled = PAGE <= 1;
@@ -935,10 +1228,17 @@ function wire() {
   ['postedFilter', 'langFilter', 'newFilter', 'seniorityFilter', 'workModeFilter', 'sourceFilter', 'ttpsFilter'].forEach(function (id) {
     $(id).addEventListener('change', function () { applyFilters(); });
   });
-  $('showAppliedBtn').addEventListener('click', function () {
-    SHOW_APPLIED = !SHOW_APPLIED;
-    this.setAttribute('aria-pressed', String(SHOW_APPLIED));
-    applyFilters();
+  document.querySelectorAll('.tab[data-tab]').forEach(function (b) {
+    b.addEventListener('click', function () { setTab(b.getAttribute('data-tab')); });
+  });
+  $('backupBtn').addEventListener('click', backupMarks);
+  $('restoreInput').addEventListener('change', function () {
+    if (this.files && this.files[0]) restoreMarks(this.files[0]);
+    this.value = '';
+  });
+  $('toastAction').addEventListener('click', function () {
+    var fn = toastUndo; hideToast();
+    if (fn) fn();
   });
   $('prevPageBtn').addEventListener('click', function () { changePage(-1); });
   $('nextPageBtn').addEventListener('click', function () { changePage(1); });
@@ -948,8 +1248,27 @@ function wire() {
   });
   // One delegated handler for every Mark applied button (picks, rows, cards)
   document.addEventListener('click', function (e) {
-    var b = e.target.closest ? e.target.closest('[data-step]') : null;
-    if (b) onStep(b.getAttribute('data-step'), Number(b.getAttribute('data-id')));
+    if (!e.target.closest) return;
+    var b = e.target.closest('[data-step]');
+    if (b) { onStep(b.getAttribute('data-step'), Number(b.getAttribute('data-id'))); return; }
+    var rmb = e.target.closest('[data-remove]');
+    if (rmb) { onRemove(Number(rmb.getAttribute('data-remove'))); return; }
+    var r = e.target.closest('[data-reset]');
+    if (r) {
+      var j = JOBS[Number(r.getAttribute('data-reset'))]; if (!j) return;
+      var before = stageOf(j);
+      resetStage(j); refreshJob(j._id); scheduleMove(j._id);
+      toast('Moved back to To apply.', 0, function () {
+        STAGE[j._k] = before; saveStage(); refreshJob(j._id); scheduleMove(j._id); toast('Undone.');
+      });
+      return;
+    }
+    // "Finish them first": open the In progress tab and go to the list
+    if (e.target.closest('#continueLink')) {
+      e.preventDefault();
+      setTab('progress');
+      $('jobs').scrollIntoView({ behavior: REDUCED_MOTION ? 'auto' : 'smooth', block: 'start' });
+    }
   });
 }
 

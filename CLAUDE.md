@@ -185,8 +185,17 @@ All in `.env` (gitignored) and GitHub Secrets:
 
 ## Dashboard job pipeline (2026-10-08)
 - Every job: 1 Read JD (opens ad) -> 2 Customize (copies `/tailor-application title | company | url`)
-  -> 3 Applied (hides it, copies the `python funnel.py add ...` line). State is per-browser
+  -> 3 Applied (copies the `python funnel.py add ...` line). State is per-browser
   localStorage (`hkjobs.stage.v1`, `hkjobs.applied.v1`); the tracker is the cross-device truth.
+- Status tabs (2026-10-08) above the job list: To apply / In progress (read or customized) /
+  Applied / Removed. "x Remove" (not for me, `hkjobs.removed.v1`) hides a job from Apply first
+  and the other tabs; the Removed tab restores it. Applied jobs cannot be removed. Filters narrow To apply only; the other two list every job with that status across
+  all categories. Colours: amber stripe = read, orange = customizing, green tint = applied, red
+  chip = day-7 follow-up due. A clicked job stays in place 1.5s, then moves (toast has Undo);
+  Apply first refills to 8. Page opens on In progress when it is non-empty. Header shows
+  "Applied this week N / 15" from the localStorage marks. Back up / Restore writes the marks to
+  a JSON file (merge on restore, earliest date wins). Tailwind purges class names built by
+  concatenation, so status classes are spelled out in full (`ROW_CLS`).
 - Find contact: LinkedIn people-search links, Hong Kong only (geoUrn 103291313): People at
   company, Recruiter, Hiring manager (or Agency consultant for staffing agencies). Format
   TESTED in his session 2026-10-07: `company=<name>` filters CURRENT employer (putting the

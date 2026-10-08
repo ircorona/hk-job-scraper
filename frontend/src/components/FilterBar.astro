@@ -1,5 +1,7 @@
 ---
-// Job list filters. Defaults: posted in the last 7 days, Chinese not required, applied jobs hidden.
+// Job list: status tabs (To apply / In progress / Applied) + filters. Filter defaults: posted in the
+// last 7 days, Chinese not required. The filters apply to To apply only; the other two tabs list
+// every job with that status across all categories (search still works).
 const sel = 'field w-full md:w-auto';
 ---
 
@@ -8,11 +10,25 @@ const sel = 'field w-full md:w-auto';
     <h2 class="font-serif text-2xl md:text-[1.75rem] leading-tight text-ink">Jobs</h2>
     <p id="filterSummary" class="text-sm text-ink-3 num" aria-live="polite"></p>
   </div>
+  <div class="mb-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+    <div id="statusTabs" class="tabs" role="group" aria-label="Show jobs by status">
+      <button type="button" class="tab" data-tab="todo" aria-pressed="true">To apply <span id="tabN-todo" class="tab-n">0</span></button>
+      <button type="button" class="tab" data-tab="progress" aria-pressed="false">In progress <span id="tabN-progress" class="tab-n">0</span></button>
+      <button type="button" class="tab" data-tab="applied" aria-pressed="false">Applied <span id="tabN-applied" class="tab-n">0</span></button>
+      <button type="button" class="tab" data-tab="removed" aria-pressed="false">Removed <span id="tabN-removed" class="tab-n">0</span></button>
+    </div>
+    <p id="tabNote" class="text-sm text-ink-2" aria-live="polite"></p>
+  </div>
+  <div id="backupRow" class="hidden mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink-2">
+    <span>Marks are saved in this browser only.</span>
+    <button type="button" id="backupBtn" class="st-reset">Back up to a file</button>
+    <label class="st-reset cursor-pointer">Restore from a file<input type="file" id="restoreInput" accept="application/json,.json" class="sr-only" /></label>
+  </div>
   <div class="flex flex-col gap-2 md:gap-3">
     <div class="flex flex-col md:flex-row gap-2 md:gap-3">
       <input id="searchInput" type="search" autocomplete="off" aria-label="Search by job title or company" placeholder="Search title or company"
         class="field w-full md:flex-1 min-w-0 text-base" />
-      <div class="grid grid-cols-2 md:flex gap-2 md:gap-3">
+      <div id="filtersMain" class="grid grid-cols-2 md:flex gap-2 md:gap-3">
         <select id="postedFilter" aria-label="Posted within (Hong Kong date)" class={sel}>
           <option value="1">Posted today</option>
           <option value="3">Last 3 days</option>
@@ -27,7 +43,7 @@ const sel = 'field w-full md:w-auto';
         </select>
       </div>
     </div>
-    <div class="grid grid-cols-2 md:flex md:flex-wrap gap-2 md:gap-3 items-center">
+    <div id="filtersMore" class="grid grid-cols-2 md:flex md:flex-wrap gap-2 md:gap-3 items-center">
       <select id="seniorityFilter" aria-label="Level" class={sel}>
         <option value="">All levels</option>
         <option value="Junior">Junior</option>
@@ -59,7 +75,6 @@ const sel = 'field w-full md:w-auto';
         <input type="checkbox" id="ttpsFilter" class="w-4 h-4" />
         <span>TTPS-friendly only</span>
       </label>
-      <button type="button" id="showAppliedBtn" class="chip" aria-pressed="false">Show applied (<span id="appliedCount" class="num">0</span>)</button>
     </div>
   </div>
 </div>

@@ -8,6 +8,10 @@
   --paper: #FAF8F5; --surface: #FFFFFF; --well: #F3EFE9; --rule: #E7E2DA; --rule-strong: #D6CFC4;
   --ink: #1C1B19; --ink-2: #57534E; --ink-3: #716A64;
   --accent: #FF6B00; --accent-ink: #C2410C; --accent-deep: #9A3412; --accent-tint: #FFF1E6;
+  /* Job status: amber = read, orange (accent) = customizing, green = applied, red = follow-up due */
+  --amber: #E0A030; --amber-ink: #8A5A0B; --amber-tint: #FDF5E4;
+  --ok: #15803D; --ok-ink: #166534; --ok-tint: #EAF6EE;
+  --due: #B42318; --due-tint: #FDECEA;
 }
 
 @layer base {
@@ -86,8 +90,9 @@
   .pipe-step.is-next .pipe-n { background: var(--accent); border-color: var(--accent); color: var(--ink); }
   .pipe-step.is-done { background: var(--well); color: var(--ink); }
   .pipe-step.is-done .pipe-n { background: var(--ink); border-color: var(--ink); color: var(--paper); }
-  .pipe-step[data-step="applied"].is-done { background: var(--ink); color: var(--paper); }
-  .pipe-step[data-step="applied"].is-done .pipe-n { background: var(--paper); border-color: var(--paper); color: var(--ink); }
+  .pipe-step[data-step="applied"].is-done { background: var(--ok); color: #fff; }
+  .pipe-step[data-step="applied"].is-done:hover { background: var(--ok-ink); color: #fff; }
+  .pipe-step[data-step="applied"].is-done .pipe-n { background: #fff; border-color: #fff; color: var(--ok-ink); }
   .pipe-step.is-disabled { opacity: .45; pointer-events: none; }
   /* Phones: the full-label pipeline is ~300px; give it the space it has, never more */
   .pipe { max-width: 100%; }
@@ -95,6 +100,17 @@
     .pipe-step { padding: .25rem .4rem; gap: .25rem; font-size: .75rem; }
   }
   @media (max-width: 370px) { .pipe-n { display: none; } }
+
+  /* Remove ("not for me"): quiet text button next to the steps */
+  .pipe-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .25rem .625rem; max-width: 100%; }
+  .rm-btn {
+    display: inline-flex; align-items: center; gap: .25rem; min-height: 2.25rem; padding: .25rem .5rem;
+    font-size: .8125rem; font-weight: 500; color: var(--ink-3); border-radius: 6px; white-space: nowrap;
+  }
+  .rm-btn:hover { color: var(--due); background: var(--due-tint); }
+  li.st-row-removed, tr.st-row-removed > td { opacity: .55; }
+  li.st-row-removed:hover, tr.st-row-removed:hover > td { opacity: 1; }
+  .st-chip-removed { background: var(--well); color: var(--ink-2); }
 
   .contact-row { margin-top: .5rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; font-size: .8125rem; }
   .contact-link {
@@ -110,8 +126,61 @@
     background: var(--ink); color: var(--paper); padding: .625rem .875rem; border-radius: 4px;
     font-size: .875rem; line-height: 1.4; overflow-wrap: anywhere; transition: opacity .2s ease, transform .2s ease;
   }
-  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; user-select: all; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  /* max-content: left:50% would otherwise shrink the toast to half the screen on phones */
+  .toast { display: flex; align-items: center; gap: .875rem; width: max-content; }
+  .toast-msg { user-select: all; }
+  .toast-action {
+    flex-shrink: 0; padding: .25rem .625rem; border: 1px solid var(--paper); border-radius: 4px;
+    font-weight: 600; color: var(--paper); background: transparent;
+  }
+  .toast-action:hover { background: var(--paper); color: var(--ink); }
   @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+
+  /* Job status on a row or card: a stripe on the left edge, green tint once applied */
+  .st-row-read, .st-row-custom, .st-row-applied, .st-row-none { transition: background-color .3s ease, box-shadow .3s ease; }
+  li.st-row-read { box-shadow: inset 3px 0 0 var(--amber); }
+  li.st-row-custom { box-shadow: inset 5px 0 0 var(--accent); }
+  li.st-row-applied { box-shadow: inset 5px 0 0 var(--ok); background: var(--ok-tint); }
+  tr.st-row-read > td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+  tr.st-row-custom > td:first-child { box-shadow: inset 5px 0 0 var(--accent); }
+  tr.st-row-applied > td:first-child { box-shadow: inset 5px 0 0 var(--ok); }
+  tr.st-row-applied > td { background: var(--ok-tint); }
+
+  .st-line { display: flex; flex-wrap: wrap; align-items: center; gap: .375rem; margin-top: .375rem; }
+  .st-line:empty { display: none; }
+  .st-chip { display: inline-flex; align-items: center; gap: .25rem; padding: .125rem .5rem; border-radius: 4px; font-size: .75rem; font-weight: 600; white-space: nowrap; line-height: 1.4; }
+  .st-chip-read { background: var(--amber-tint); color: var(--amber-ink); }
+  .st-chip-custom { background: var(--accent-tint); color: var(--accent-deep); }
+  .st-chip-applied { background: var(--ok); color: #fff; }
+  .st-chip-due { background: var(--due-tint); color: var(--due); }
+  .st-note { font-size: .75rem; color: var(--ink-3); }
+  .st-reset { font-size: .75rem; color: var(--ink-3); text-decoration: underline; text-underline-offset: 2px; }
+  .st-reset:hover { color: var(--ink); }
+
+  /* Status tabs above the job list */
+  /* 2x2 on phones, one row from tablet up */
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--rule-strong); border-radius: 8px; overflow: hidden; background: var(--rule); }
+  .tabs .tab { background: var(--surface); }
+  @media (min-width: 768px) { .tabs { display: inline-grid; grid-template-columns: repeat(4, auto); } }
+  .tab {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; padding: .25rem 1rem;
+    font-size: .875rem; font-weight: 500; color: var(--ink-2); white-space: nowrap;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  .tabs .tab:hover { background: var(--well); color: var(--ink); }
+  .tabs .tab[aria-pressed="true"] { background: var(--ink); color: var(--paper); font-weight: 600; }
+  .tab-n { display: inline-flex; min-width: 1.375rem; justify-content: center; padding: 0 .375rem; border-radius: 999px; font-size: .75rem; background: var(--well); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .tab[data-tab="progress"] .tab-n.has { background: var(--accent-tint); color: var(--accent-deep); }
+  .tab[data-tab="applied"] .tab-n.has { background: var(--ok-tint); color: var(--ok-ink); }
+  .tab[aria-pressed="true"] .tab-n { background: var(--paper); color: var(--ink); }
+  @media (max-width: 420px) { .tab { padding: .25rem .375rem; gap: .25rem; font-size: .8125rem; } }
+
+  /* Weekly goal: applications this week vs 15 */
+  .goal-bar { height: 6px; border-radius: 999px; background: var(--well); overflow: hidden; }
+  .goal-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s ease; }
+  .goal-met .goal-fill { background: var(--ok); }
+  .goal-met .goal-num { color: var(--ok-ink); }
 
   .badge { display: inline-block; padding: .125rem .375rem; border-radius: 4px; font-size: .75rem; font-weight: 500; white-space: nowrap; line-height: 1.35; }
   .badge-neutral { background: var(--well); color: var(--ink-2); }
