@@ -38,6 +38,15 @@ def test_chinese_without_naming_a_dialect():
     assert detect_mandarin(jd) == "Required"
 
 
+def test_soft_cue_in_previous_bullet_does_not_soften():
+    """Robert Walters 95085886: the 'advantage' belonged to the banking bullet above,
+    yet the role showed as 'Chinese preferred' and reached Apply first."""
+    jd = ("Strong communication, presentation and stakeholder management skills.\n"
+          "Banking or financial services experience would be an advantage.\n"
+          "Fluent in written and spoken Chinese and English.")
+    assert detect_mandarin(jd) == "Required"
+
+
 # --- word order must not matter ---------------------------------------------
 
 @pytest.mark.parametrize("jd", [

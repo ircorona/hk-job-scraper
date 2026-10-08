@@ -73,10 +73,21 @@ FALSE_POSITIVE_CUES = (
 
 
 def _chinese_windows(text, radius=140):
-    """Yield text windows around each Chinese-language mention."""
+    """Yield text windows around each Chinese-language mention.
+
+    The window stops at line breaks: each bullet of an ad is its own line, and a
+    soft cue in the NEIGHBOURING bullet must not soften this one. Robert Walters
+    95085886 (2026-10-08) read "Banking ... would be an advantage.\n Fluent in
+    written and spoken Chinese and English." and came out 'Preferred'.
+    """
     for m in re.finditer(CHINESE_TERMS, text, re.IGNORECASE):
-        start = max(0, m.start() - radius)
-        yield text[start:m.end() + radius], m.group(0)
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        line_end = text.find("\n", m.end())
+        if line_end == -1:
+            line_end = len(text)
+        start = max(line_start, m.start() - radius)
+        end = min(line_end, m.end() + radius)
+        yield text[start:end], m.group(0)
 
 
 def extract_keywords(desc, hard_only=False):
