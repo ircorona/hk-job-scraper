@@ -187,9 +187,12 @@ All in `.env` (gitignored) and GitHub Secrets:
 - Every job: 1 Read JD (opens ad) -> 2 Customize (copies `/tailor-application title | company | url`)
   -> 3 Applied (hides it, copies the `python funnel.py add ...` line). State is per-browser
   localStorage (`hkjobs.stage.v1`, `hkjobs.applied.v1`); the tracker is the cross-device truth.
-- Find contact: LinkedIn people-search links, Hong Kong only (geoUrn 103291313), Recruiter +
-  Hiring manager (titles picked from the job title), or Agency consultant for staffing-agency
-  ads. Opens in his logged-in Premium session; we cannot search LinkedIn ourselves.
+- Find contact: LinkedIn people-search links, Hong Kong only (geoUrn 103291313): People at
+  company, Recruiter, Hiring manager (or Agency consultant for staffing agencies). Format
+  TESTED in his session 2026-10-07: `company=<name>` filters CURRENT employer (putting the
+  company in keywords matched past jobs too); `titleFreeText` is silently dropped, so role
+  words go in `keywords`; long quoted OR-groups returned nothing for small firms. Some firms
+  (e.g. Reefan) have no LinkedIn presence at all: no link can fix that, just apply.
 - Frontend-only fixes can ship without the 55-min CI run: build, then curl-FTPS upload the new
   `_assets/*.css` FIRST and `index.html` second (Python ftplib data channel timed out here).
 
