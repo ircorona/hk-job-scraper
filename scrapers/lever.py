@@ -29,9 +29,16 @@ from .base import BaseScraper
 LEVER_COMPANIES = {
     "binance":        "Binance",          # 138 HK jobs
     "animocabrands":  "Animoca Brands",   # 1 HK job
-    "lalamove":       "Lalamove",         # 105 total, 0 HK (but may change)
-    "crypto":         "Crypto.com",       # 2 total, 0 HK (but may change)
+    "lalamove":       "Lalamove",         # 51 HK on 2026-10-09, labelled "Hong Kong SAR"
+    "crypto":         "Crypto.com",       # 24 HK on 2026-10-09
 }
+
+
+def is_hong_kong(job: dict) -> bool:
+    """True if any of the posting's locations names Hong Kong ("Hong Kong", "Hong Kong SAR", ...)."""
+    cats = job.get("categories") or {}
+    locs = [cats.get("location") or ""] + list(cats.get("allLocations") or [])
+    return any("hong kong" in loc.lower() for loc in locs)
 
 
 class LeverScraper(BaseScraper):
@@ -59,7 +66,9 @@ class LeverScraper(BaseScraper):
     async def _fetch_company(self, client: httpx.AsyncClient, slug: str, display_name: str, query: str) -> list[JobListing]:
         """Fetch all HK postings for one company."""
         url = f"{self.API_BASE}/{slug}"
-        params = {"location": "Hong Kong", "mode": "json"}
+        # No server-side location filter: Lever matches it exactly, and Lalamove labels
+        # HK jobs "Hong Kong SAR", so ?location=Hong Kong returned 0 of its 51 HK ads.
+        params = {"mode": "json"}
 
         try:
             resp = await client.get(url, params=params)
@@ -68,7 +77,7 @@ class LeverScraper(BaseScraper):
             if resp.status_code != 200:
                 return []
 
-            jobs_data = resp.json()
+            jobs_data = [j for j in resp.json() if is_hong_kong(j)]
             if not jobs_data:
                 return []
 
