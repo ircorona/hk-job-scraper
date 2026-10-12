@@ -202,6 +202,11 @@ All in `.env` (gitignored) and GitHub Secrets:
   company in keywords matched past jobs too); `titleFreeText` is silently dropped, so role
   words go in `keywords`; long quoted OR-groups returned nothing for small firms. Some firms
   (e.g. Reefan) have no LinkedIn presence at all: no link can fix that, just apply.
+- Re-tested 2026-10-12: PARENTHESES RETURN NO RESULTS ("(head OR director) AND (procurement)").
+  Hiring manager now uses flat pairs, `head procurement OR director procurement OR ...`
+  (HAECO: 8 pages down to 1, the real hiring manager 4th). "Hiring post" link = content
+  search `hiring "<company>"`, past month, latest; not HK-filtered. cleanCompany strips any
+  bracket and keeps in-name dots (Crypto.com, Coins.ph).
 - Frontend-only fixes can ship without the 55-min CI run: build, then curl-FTPS upload the new
   `_assets/*.css` FIRST and `index.html` second (Python ftplib data channel timed out here).
 

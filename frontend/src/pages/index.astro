@@ -361,6 +361,10 @@ function settleMoves() {
 //  - titleFreeText is silently dropped by LinkedIn, so role words go in keywords.
 //  - Long quoted OR-groups of titles returned nothing for small firms; simple words work.
 //  - geoUrn 103291313 = Hong Kong (outreach rule 4: HK-verified only).
+// Re-tested 2026-10-12 (HAECO): parentheses kill the search. "(head OR director) AND
+// (procurement OR supplier)" = No results. Flat OR works, and so do two-word pairs ORed
+// together: "head procurement OR director procurement" = 1 page of heads/directors
+// (vs 8 pages for the function alone), with the actual hiring manager in it.
 var LI_PEOPLE = 'https://www.linkedin.com/search/results/people/?origin=FACETED_SEARCH&geoUrn=%5B%22103291313%22%5D';
 function liPeople(company, keywords) {
   return LI_PEOPLE + '&company=' + encodeURIComponent(company) + (keywords ? '&keywords=' + encodeURIComponent(keywords) : '');
@@ -373,18 +377,45 @@ function cleanCompany(c) {
   var brand = /\(([A-Za-z0-9&\s]{2,20})\)?\s*$/.exec(String(c || '').trim());
   if (brand && !/^(asia|hong kong|hk|asia pacific)$/i.test(brand[1].trim())) return brand[1].trim();
   return String(c || '')
-    .replace(/\((asia|hong kong|hk|asia pacific)\)/ig, ' ')
+    .replace(/\([^)]*\)/g, ' ')  // "(Asia)", "(A.P.)": LinkedIn search drops anything with brackets
     .replace(/\b(limited|ltd\.?|co\.?|company|hong kong|hk|holdings?|group|inc\.?|corporation)\b/ig, ' ')
-    .replace(/[,.|]+/g, ' ').replace(/\s+/g, ' ').trim();
+    // A dot inside a name stays: Crypto.com, YesStyle.com and Coins.ph are the LinkedIn names.
+    .replace(/[,|]+|\.(?!\w)/g, ' ').replace(/\s+/g, ' ').trim();
 }
-// Simple words for the team that owns the role (matched against headline/title)
+// Single words for the team that owns the role (matched against headline/title).
+// Most specific function first: "Supplier Performance & AI Enablement, Group Procurement"
+// is owned by Procurement, not by every HAECO engineer with "AI" in the headline.
 function teamWords(title) {
   var t = String(title || '').toLowerCase();
-  if (/seo|search engine|digital marketing/.test(t)) return 'seo OR "digital marketing" OR marketing';
-  if (/fraud|risk|aml|kyc|compliance|financial crime/.test(t)) return 'fraud OR risk OR compliance';
-  if (/\bai\b|llm|agent|automation|machine learning|genai|generative/.test(t)) return 'AI OR automation OR data OR "digital transformation"';
-  if (/web|developer|frontend|full stack|engineer/.test(t)) return 'engineering OR developer OR technology';
-  return 'data OR analytics OR "business intelligence"';
+  if (/supplier|procurement|sourcing|purchasing|vendor/.test(t)) return ['procurement', 'supplier'];
+  if (/seo|search engine|digital marketing/.test(t)) return ['seo', 'marketing'];
+  if (/fraud|risk|aml|kyc|compliance|financial crime/.test(t)) return ['risk', 'fraud'];
+  if (/logistics|supply chain|warehouse|operations analyst/.test(t)) return ['operations', 'logistics'];
+  if (/financ|fp&a|accounting|treasury/.test(t)) return ['finance', 'financial'];
+  if (/\bai\b|llm|agent|automation|machine learning|genai|generative/.test(t)) return ['AI', 'transformation'];
+  if (/web|developer|frontend|full stack|engineer/.test(t)) return ['engineering', 'technology'];
+  return ['data', 'analytics'];
+}
+// "a x OR a y OR b x OR b y": the flat pair form LinkedIn accepts (see the test note above).
+function pairs(firsts, seconds) {
+  var out = [];
+  firsts.forEach(function (a) { seconds.forEach(function (b) { out.push(a + ' ' + b); }); });
+  return out.join(' OR ');
+}
+// The hiring manager sits one level above the role, so pair a senior title with the
+// function. Without it the search listed every analyst and engineer in the team.
+function managerWords(title) {
+  var senior = /\b(manager|head|lead|principal|director)\b/i.test(title || '') ? ['head', 'director'] : ['head', 'manager'];
+  return pairs(senior, teamWords(title));
+}
+// Outreach playbook: the person who posted "we're hiring" on LinkedIn is the fastest route.
+// Content search, newest first, last month. Company only: adding role words made the
+// AND too strict to match how people write "we're hiring" posts. Not yet tested in his
+// logged-in session.
+function liHiringPost(company) {
+  return 'https://www.linkedin.com/search/results/content/?keywords=' +
+    encodeURIComponent('hiring "' + company + '"') +
+    '&datePosted=%22past-month%22&sortBy=%22date_posted%22';
 }
 function contactLinks(j, compact) {
   var co = cleanCompany(j.company);
@@ -392,11 +423,12 @@ function contactLinks(j, compact) {
   var agency = AGENCIES.test(j.company || '');
   var links = [['People at ' + (co.length > 18 ? 'company' : co), liPeople(co, ''), 'Everyone currently at ' + co + ' in Hong Kong. At small firms this is the founder or manager.']];
   if (agency) {
-    links.push(['Agency consultant', liPeople(co, '(consultant OR recruiter OR recruitment) AND (' + teamWords(j.title) + ')'), 'Consultants at ' + co + ' covering this field, Hong Kong only']);
+    links.push(['Agency consultant', liPeople(co, pairs(['consultant', 'recruiter'], teamWords(j.title))), 'Consultants at ' + co + ' covering this field, Hong Kong only']);
   } else {
     links.push(['Recruiter', liPeople(co, 'recruiter OR "talent acquisition" OR "human resources" OR HR'), 'Recruiters and HR currently at ' + co + ', Hong Kong only']);
-    links.push(['Hiring manager', liPeople(co, teamWords(j.title)), 'People in the team that owns this role, currently at ' + co + ', Hong Kong only']);
+    links.push(['Hiring manager', liPeople(co, managerWords(j.title)), 'Heads, directors and managers of the team that owns this role, currently at ' + co + ', Hong Kong only']);
   }
+  links.push(['Hiring post', liHiringPost(co), 'LinkedIn posts from the last month saying ' + co + ' is hiring; the author is usually the hiring manager']);
   var html = links.map(function (l) {
     return '<a class="contact-link" href="' + esc(l[1]) + '" target="_blank" rel="noopener noreferrer" title="' + esc(l[2]) + '">' + esc(l[0]) + '</a>';
   }).join('');
